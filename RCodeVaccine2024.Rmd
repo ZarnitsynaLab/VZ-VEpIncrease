@@ -1,0 +1,2672 @@
+---
+title: "Code for the paper by Dean NE, Halloran B, and Zarnitsyna VI, Vaccine 2024"
+author: "Veronika Zarnitsyna"
+date: "11/10/2024"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+
+**You can click the 'Knit' button to generate a PDF file with all the figures or run the corresponding chunks for each figure separately.** 
+
+**Figure 1 Panels C and D.** The vaccine effectiveness of vaccines against Covid-19. The data were digitized using WebPlotDigitizer (https://automeris.io/) from Lin et al., NEJM 2022 (PMID: 35020982) and added as two first columns of data in files "mRNA.csv" and "BNT162b2.csv". 
+
+```{r figure1CD, echo=FALSE, warning=FALSE, message=FALSE, fig.align='center'}
+
+rm(list=ls()) 
+library(readr)   # Read tabular data.
+library(tidyr)   # Data frame tidying functions.
+library(dplyr)   # General data frame manipulation.
+library(ggplot2) # Flexible plotting.
+library(cowplot) # to have multiple ggplots
+#library(griddExtra) # to have multiple panels with ggplot
+library(data.table) # for as.data.table() function
+require(scales) #to use 10^6 instead of 1e_06 on y-axis
+
+#reading the data 
+mRNA <- read.csv("mRNA.csv", header=TRUE)
+BNT162b2 <- read.csv("BNT162b2.csv", header=TRUE)
+
+#The third column data in the data files was calculated as VEp=1-(1-mRNA$Hospitalization)/(1-mRNA$Covid) or VEp=1-(1-BNT162b2$Hospitalization)/(1-BNT162b2$Covid)
+
+mRNA$Hospitalization=100*mRNA$Hospitalization
+mRNA$Covid=100*mRNA$Covid
+mRNA$VEp=100*mRNA$VEp
+BNT162b2$Hospitalization=100*BNT162b2$Hospitalization
+BNT162b2$Covid=100*BNT162b2$Covid
+BNT162b2$VEp=100*BNT162b2$VEp
+
+############################################################################################
+My_Theme = theme(
+  axis.title.x = element_text(size = 16),
+  axis.text.x = element_text(size = 14),
+  axis.title.y = element_text(size = 16),
+  axis.text.y = element_text(size = 14))
+
+print ("Figure 1 Panel C: Estimated VE components for mRNA-1273 vaccine")
+
+mRNAplot <- ggplot(data =mRNA, aes(x = Time)) +
+  geom_line(data = mRNA, aes(y = Hospitalization), linetype = "dashed", color = "red",size=1.) +      geom_line(data = mRNA, aes(y = Covid), linetype = "dotted",color = "red", size=1.) +
+  geom_line(data = mRNA, aes(y = VEp), linetype = "solid", color = "red", size=1.1) + My_Theme
+
+# Print the plot to include it in the document
+print(mRNAplot)
+ggsave("mRNA.eps", plot=mRNAplot, width = 6, height = 4, device="eps")
+
+print ("Figure 1 Panel D: Estimated VE components for BNT162b2 vaccine")
+
+BNTplot <- ggplot(data =BNT162b2, aes(x = Time)) +
+  geom_line(data = BNT162b2, aes(y = Hospitalization),color = "blue",linetype = "dashed", size=1.) +   geom_line(data = BNT162b2, aes(y = Covid), linetype = "dotted", color = "blue", size=1.) +
+  geom_line(data = BNT162b2, aes(y = VEp), linetype = "solid", color = "blue", size=1.2) + My_Theme
+
+# Print the plot to include it in the document
+print(BNTplot)
+
+#ggsave("BNT162b2.eps", plot=BNTplot, width = 6, height = 4, device="eps")
+```
+
+**Figure 3. Simulation results for default scenario with waning VEs.**
+
+Note that the code generating the data is commented (above the line ### Figure 3 Panel A ###) as it may take several hours to generate the simulation results files from 100 simulations. If uncommented, it will generate 3 sets of 100 files, allowing for plotting the dynamics of susceptible individuals and bar plots for each simulation, similar to the closest-to-average simulation shown in Figure 3. It will also create a summary file for VEps from 100 simulations, 'VEpbasic_waning730f007_1.csv', which will be used for further analysis. The file 'VEpbasic_waning730f007_1.csv,' along with three files for the simulation closest to the average ('susceptible1_69.csv', 'barplotALL1_69.csv', 'barplotALLS1_69.csv'), are provided for further analysis and plotting the results, allowing you to skip running the actual simulations.
+
+The generated file "VEpbasic_waning730f007_1.csv" will also be used as a baseline condition in the chunk for plotting Figure 5 below.
+
+```{r figure3, echo=FALSE, warning=FALSE, message=FALSE, fig.align='center'}
+rm(list=ls()) 
+library(readr)   # Read tabular data.
+library(tidyr)   # Data frame tidying functions.
+library(dplyr)   # General data frame manipulation.
+library(ggplot2) # Flexible plotting.
+
+# VEmodelwithbarplots<-function(frac1,frac2,alpha1,alpha2,alpha3,alpha4,beta1,beta2,beta3,beta4,VEswaning,VEpwaning,m){ #m is the number of simulations
+#   with(as.list(c(frac1,frac2,alpha1,alpha2,alpha3,alpha4,beta1,beta2,beta3,beta4,VEswaning,VEpwaning,m)),{ # m is the number of the simulation
+# # population
+# N =200000 #number of unvaccinated people      
+# NV=200000 #number of vaccinated people 
+# #Unvaccinated
+# infection_force = 1/180.   #4./180. # 30% attack rate over 180 days; to be adjusted
+# infection_to_serious_force = 1/10. # base chance to get severe disease if infected
+# #Vaccinated
+# infection_forceV = 1/180. #4./180
+# infection_to_serious_forceV = 1/10. # base chance to get severe disease if infected while being vaccinated
+# 
+# if (VEswaning>0) {
+# VEs_waining= (alpha2-alpha4)/VEswaning #(alpha2-alpha4)/180.
+# }
+# if (VEpwaning>0) {
+# VEp_waining= (beta2-beta4)/VEpwaning 
+# }
+# 
+# group1=ceiling(N*frac1)-1 #correction
+# group3=ceiling(NV*frac2)-1 #correction
+# 
+# ###########################block for unvaccinated##################################
+# #initializing groups S and SS with different protection
+# S = 0.0*(1:N)
+# SS = 0.0*(1:N)
+# infect=0*(1:N)
+# ser=0*(1:N) #severe cases
+# 
+# #two groups: 'vulnerable'(group1) and 'immunocompetent'
+# S[1:group1]=alpha1 # protection against infection in unvaccinated: 1 means base, <1 means more protected
+# S[(group1+1):N]=alpha2
+# SS[1:group1]=beta1 # protection against severe disease: 1 means base, <1 means more protected
+# SS[(group1+1):N]=beta2 
+# 
+# for (i in 1:180) #i corresponds to the day, j corresponds to the individal/person
+# { # cycle per days
+#   for (j in 1:N) # cycle per people
+#   {
+#     if ((infect[j]==0) && (infection_force*S[j] > runif(1))) # infection probability
+#     {
+#       infect[j]=i #day of infection
+#       if (infection_to_serious_force*SS[j] > runif(1)) # progression to severe probability
+#       {
+#         ser[j]=i #day of becoming severely ill
+#       }
+#     }
+#   }
+# }
+# # sum_infect=sum(infect>0)
+# # sum_ser= sum(ser>0)
+# # ratio_inf_to_ser = sum_infect/sum_ser
+# 
+# #calculate at what month each person was infected; 0 - person is not infected
+# infect_month=(infect+30)%/%31 
+# 
+# a=data.frame(S,infect,infect_month,ser)
+# b = a %>% group_by(infect) %>% summarise(mean=mean(S))
+# 
+# #infect_month=0 in 'c' shows the line for uninfected; if absent -all infected; if '6' is absent - noone infected during month 6
+# c = a %>% group_by(infect_month) %>% summarise(mean_per_Month=mean(S),N=n())
+# 
+# ser_month=(ser+30)%/%30.1
+# a_ss=data.frame(S,ser,ser_month)
+# ##ser_month=0 in 'd' shows the line for those not progressed to severe disease 
+# d = a_ss %>% group_by(ser_month) %>% summarise(SS_per_Month=mean(S),Nser=n())
+# 
+# ###############################################vaccinated##############################
+# #initializing groups S and SS with different protection
+# SV = 0.0*(1:NV)
+# SSV = 0.0*(1:NV)
+# infectV=0*(1:NV)
+# serV=0*(1:NV)
+# 
+# #two groups: 'vulnerable'(group3) and 'immunocompetent'in vaccinated
+# SV[1:group3]=alpha3 # protection against infection in vaccinated: 1 means base, <1 means more protected
+# SSV[1:group3]=beta3 # protection against severe disease in vaccinated: 1 means base, <1 means more protected
+# 
+# if (VEswaning==0) {
+# # #two lines below are needed only for stable progression to severe disease#
+# # #also need to comment the line SSV=SV below
+#   SV[(group3+1):NV]=alpha4
+# }
+# 
+# if (VEpwaning==0) {
+# # #two lines below are needed only for stable progression to severe disease#
+# # #also need to comment the line SSV=SV below
+#   SSV[(group3+1):NV]=beta4
+# }
+# 
+# for (i in 1:180)  { # cycle per days
+#   if (VEswaning>0) {
+#   SV[(group3+1):NV]=alpha4
+#   alpha4=min(alpha2,alpha4+VEs_waining)
+#   }
+#   if (VEpwaning>0) {
+#   SSV[(group3+1):NV]=beta4
+#   beta4=min(beta2,beta4+VEp_waining)
+#   }
+# 
+#   for (j in 1:N) # cycle per people
+#   {
+#     if ((infectV[j]==0) && (infection_forceV*SV[j] > runif(1))) # infection probability
+#     {
+#       infectV[j]=i
+#       if (infection_to_serious_forceV*SSV[j] > runif(1)) # serious probability
+#       {
+#         serV[j]=i
+#       }
+#     }
+#   }
+# }
+# sum_infectV=sum(infectV>0)
+# sum_serV= sum(serV>0)
+# ratio_inf_to_serV = sum(infectV>0)/sum(serV>0)
+# 
+# infect_monthV=(infectV+30)%/%31
+# aV=data.frame(SV,infectV,infect_monthV,serV)
+# bV = aV %>% group_by(infectV) %>% summarise(mean=mean(SV))
+# cV = aV %>% group_by(infect_monthV) %>% summarise(mean_per_MonthV=mean(SV),NV=n())
+#  
+# ser_monthV=(serV+30)%/%30.1
+# a_ssV=data.frame(SV,serV,ser_monthV)
+# dV = a_ssV %>% group_by(ser_monthV) %>% summarise(SS_per_MonthV=mean(SV),NserV=n())
+# 
+# #########generate file to report susceptible left######
+# susceptible=data.frame(S,infect,infect_month,ser,SV,infectV,infect_monthV,serV)
+# write.csv(susceptible, file = paste0("susceptible1_",m,".csv"), row.names = FALSE)
+# ###############################################################################################
+# ######################################BAR PLOTS################################################
+# # adding labels
+# SG = rep('', times=N) # group label
+# SG[1:group1]='1' # 
+# SG[(group1+1):N]='2'
+# 
+# a_per_group=data.frame(SG,S,infect_month)
+# c_per_group = a_per_group %>%
+#   filter(infect_month > 0 ) %>%
+#   group_by(SG,infect_month) %>% 
+#   summarise(mean_per_Month=mean(S),N_inf=n())
+# # plotting
+# barplotU = data.frame(G = c_per_group$SG ,Month = c_per_group$infect_month,N_inf = c_per_group$N_inf)
+# 
+# SVG = rep('', times=N) #group label
+# SVG[1:group3]="3"
+# SVG[(group3+1):NV]="4"
+# 
+# ##############################Bar Plot for Infected##################################
+# av_per_group=data.frame(SVG,SV,infect_monthV)
+# cv_per_group = av_per_group %>%
+#   filter(infect_monthV > 0 ) %>%
+#   group_by(SVG,infect_monthV) %>% 
+#   summarise(mean_per_Month=mean(SV),N_inf=n())
+# barplotV = data.frame(G = cv_per_group$SVG ,Month = cv_per_group$infect_monthV,N_inf= cv_per_group$N_inf)
+# 
+# # all four groups combined for the bar plot
+# barplotALL=rbind(barplotU,barplotV)
+# #ggplot(barplotALL, aes(x = Month, y = N_inf, fill = G, colour = G)) + geom_bar(stat = "identity")
+# #ggsave("barplotALL.eps", width = 6, height = 4.5, device="eps") 
+# write.csv(barplotALL, file = paste0("barplotALL1_",m,".csv"), row.names = FALSE)
+# 
+# ##############################Bar Plot for Severe##################################
+# #################progressed to severe in unvaccinated###################
+# as_per_group=data.frame(SG,S,ser_month)
+# cs_per_group = as_per_group %>%
+#   filter(ser_month > 0 ) %>%
+#   group_by(SG,ser_month) %>% 
+#   summarise(mean_per_Month=mean(S),N_ser=n())
+# barplotSU = data.frame(G = cs_per_group$SG ,Month = cs_per_group$ser_month,N_ser= cs_per_group$N_ser)
+# #####progressed to severe in vaccinated###################
+# avs_per_group=data.frame(SVG,SV,ser_monthV)
+# cvs_per_group = avs_per_group %>%
+#   filter(ser_monthV > 0 ) %>%
+#   group_by(SVG,ser_monthV) %>% 
+#   summarise(mean_per_Month=mean(SV),N_ser=n())
+# barplotSV = data.frame(G = cvs_per_group$SVG ,Month = cvs_per_group$ser_monthV,N_ser= cvs_per_group$N_ser)
+# 
+# barplotALLS=rbind(barplotSU,barplotSV)
+# write.csv(barplotALLS, file = paste0("barplotALLS1_",m,".csv"), row.names = FALSE)
+# ###############################################################################################
+# ##################################calculating VEp###############################
+# VEp=1-(dV$NserV/cV$NV)[2:7]/(d$Nser/c$N)[2:7] 
+#    return(VEp)
+#    })
+# }
+# 
+# set.seed(123) #setting seed keeps ALL 100 simulations the same if you repeat it
+# simul_number=100
+# VEpbasic <- matrix(NA,nrow=simul_number,ncol=6)
+# for (m in 1:simul_number) {
+# VEpbasic[m,] <- VEmodelwithbarplots(0.07,0.07,1,1,1,0.03,1,0.5,1,0.03,730,0,m)
+# }
+# write.csv(VEpbasic, file = "VEpbasic_waning730f007_1.csv", row.names = FALSE)
+
+###########################  Figure 3 Panel A   ############################################
+########Plotting all 100 simulation and the one that is closest to average####################
+
+Plotting100<-function(filename){ 
+  with(as.list(c(filename)),{
+    
+# Read the CSV file
+file = paste0(filename, ".csv")
+data <- read.csv(file)
+  
+strings <- data
+# Calculate the overall average values 
+overall_averaged_values <- apply(strings, 2, mean) 
+
+# Function to find the string with the closest values to the overall averaged values 
+find_closest_string <- function(strings, overall_averaged_values) { 
+  # Calculate the distances between each string and the overall averaged values 
+  distances <- apply(strings, 1, function(x) sqrt(sum((x - overall_averaged_values)^2))) 
+  # Find the index of the string with the minimum distance 
+  closest_string_index <- which.min(distances) 
+  return(list(string = strings[closest_string_index, ], index = closest_string_index)) 
+  } 
+# Find the closest string to the overall averaged values 
+closest_string <- find_closest_string(strings, overall_averaged_values) 
+
+pdf(file = paste0(filename, ".pdf"), width = 6.7, height = 5.5, family = "Helvetica", pointsize = 12, onefile = TRUE)
+# Plot all strings 
+matplot(1:6, t(strings), type = "l", col = "grey", lty = 1, xlab = "Study Month", ylab = "VEp") 
+# Plot the chosen closest string as a thick line 
+lines(1:6, closest_string$string, type = "l", lwd = 2) 
+#legend("topleft", legend = paste("Closest to Average (VEp#", closest_string$index,")", sep = " "), col = "black", lwd = 2)
+dev.off()
+     return(closest_string$index)
+   })
+ }
+
+################finding the closest to averaged VE values for each condition ############ 
+allfilenames <- c("VEpbasic_waning730f007_1")
+
+for (k in 1:length(allfilenames)) {
+index=Plotting100(allfilenames[k])
+file = paste0(allfilenames[k], ".csv")
+data=read.csv(file)
+
+# Extract the specific row and convert it to a numeric vector
+# Create the variable with the name in the name vector
+#the result is a varibale with the name allfilenames[i] that has the simulation values closest to the 100 simulation average
+assign(allfilenames[k], as.numeric(data[index,]), envir = .GlobalEnv)
+}
+
+print ("Figure 3 Panel A")
+knitr::include_graphics("VEpbasic_waning730f007_1.pdf")
+
+##################################### PANEL B ######################################
+###############Plotting fractions of susceptibles for each grop##########
+
+# Load the CSV file
+data <- read.csv("susceptible1_69.csv")  
+
+# Extract relevant columns (assuming 2nd and 6th columns contain infection dates)
+infection_dates <- data[[2]]
+infection_dates_vaccinated <- data[[6]]
+
+# Define groups
+group1 <- infection_dates[1:14001]
+group2 <- infection_dates[14002:200000]
+group3 <- infection_dates_vaccinated[1:14001]
+group4 <- infection_dates_vaccinated[14002:200000]
+total <- rbind(group1, group2, group3, group4)
+
+# Function to calculate the fraction of susceptible people per day
+fraction_susceptible <- function(group, days = 1:180) {
+  total <- length(group)  # Total individuals in the group
+
+  # Calculate the fraction of susceptible individuals per day
+  sapply(days, function(day) {
+    still_susceptible <- sum(group == 0 | group > day)  # Count individuals not infected by this day
+    still_susceptible / total  # Fraction of susceptible individuals
+  })
+}
+
+# Apply the function to each group
+frac1 <- fraction_susceptible(group1)
+frac2 <- fraction_susceptible(group2)
+frac3 <- fraction_susceptible(group3)
+frac4 <- fraction_susceptible(group4)
+
+# Prepare data for plotting (include day 0 as 1 for all groups)
+plot_data <- data.frame(
+  Days = rep(0:180, 4),  # Days for x-axis positioning
+  Fraction = c(1, frac1, 1, frac2, 1, frac3, 1, frac4),  # Fractions for each group
+  Group = factor(rep(1:4, each = 181))  # Group labels
+)
+
+# Define color-blind-friendly colors for the groups
+ColorBlindFriendly <- c("#E69F00", "#56B4E9", "#800080", "#009E73")
+
+# Create the plot using ggplot2
+ggplot(plot_data, aes(x = Days, y = Fraction, color = Group)) +
+  geom_line(size = 1.5) +  # Make lines thicker with size parameter
+  scale_colour_manual(values = ColorBlindFriendly) +
+  scale_x_continuous(
+    breaks = seq(0, 180, by = 30),  # Set breaks at every 30 days
+    labels = c("0", "1", "2", "3", "4", "5", "6")  # Correct labels
+  ) +
+  labs(
+    #title = "Fraction of Susceptible Individuals in Different Groups",
+    x = "Study Month",  # X-axis label
+    y = "Fraction of Susceptible",  # Y-axis label
+    color = "Group"  # Legend title
+  ) +
+  theme(
+    axis.title.x = element_text(size = 18),  # X-axis label size
+    axis.title.y = element_text(size = 18),  # Y-axis label size
+    axis.text.x = element_text(size = 18),   # X-axis tick label size
+    axis.text.y = element_text(size = 18),   # Y-axis tick label size
+    legend.title = element_text(size = 18),  # Legend title size
+    legend.text = element_text(size = 18)    # Legend text size
+  )
+# Print the plot to include it in the document
+print ("Figure 3 Panel B")
+ggsave("Figure3PanelB.eps", width = 6, height = 4.5, device = "eps")
+
+####################################### PanelC ########################################
+
+barplotALL <- read.csv(file="barplotALL1_69.csv", row.names = NULL)
+
+# Ensure 'Group' is a factor
+barplotALL$Group <- as.factor(barplotALL$Group)
+
+# Define colors for each group 
+ColorBlindFriendly <- c("#E69F00", "#56B4E9", "#800080", "#009E73")
+# Define darker versions of the colors for the borders
+DarkerBorders <- c("#B36200", "#377CB3", "#4B0082", "#006F4D")
+
+# Basic bar plot with color-blind-friendly palette and darker borders
+ggplot(barplotALL, aes(x = factor(Month), y = N_inf, fill = Group, colour = Group)) +
+  geom_bar(stat = "identity", width = 0.7, size = 0.8) +  # Bars with borders
+  scale_fill_manual(values = ColorBlindFriendly) +  # Use color-blind-friendly fill colors
+  scale_colour_manual(values = DarkerBorders) +  # Use darker colors for the borders
+  theme(
+    axis.text = element_text(size = 14),  # Increase size of axis tick numbers
+    axis.title = element_text(size = 16),  # Increase size of axis titles
+    legend.text = element_text(size = 12),  # Increase legend text size
+    legend.title = element_text(size = 14)  # Increase legend title size
+  ) + 
+  labs(x = "Study Month", y = "Count of Infected")   # Adjust axis labels
+print ("Figure 3 Panel C")
+ggsave("Figure3PanelC.eps", width = 6, height = 4.5, device="eps")
+
+####################################### Panel D ########################################
+barplotALLS <- read.csv(file="barplotALLS1_69.csv", row.names = NULL)
+barplotALLS$Group <- as.factor(barplotALLS$Group)
+
+# Basic bar plot with grayscale colors (no alpha adjustment)
+ggplot(barplotALLS, aes(x = factor(Month), y = N_ser, fill = Group, colour = Group)) +
+ geom_bar(stat = "identity", width = 0.7, size = 0.8) +  # Bars with borders
+  scale_fill_manual(values = ColorBlindFriendly) +  # Use color-blind-friendly fill colors
+  scale_colour_manual(values = DarkerBorders) +  # Use darker colors for the borders
+  theme(
+    axis.text = element_text(size = 14),  # Increase size of axis tick numbers
+    axis.title = element_text(size = 16),  # Increase size of axis titles
+    legend.text = element_text(size = 12),  # Increase legend text size
+    legend.title = element_text(size = 14)  # Increase legend title size
+  ) + 
+  labs(x = "Study Month", y = "Count of Severe")  # Adjust axis labels
+print ("Figure 3 Panel D")
+ggsave("Figure3PanelD.eps", width = 6, height = 4.5, device="eps")
+
+################################################################################################
+################################Calculating the attack rate#################################
+################################################################################################
+data1_69 <- read.csv("susceptible1_69.csv")  
+
+# # Calculate the total number of 0s in columns 2 and 6
+
+total_zeros1_69 <- sum(data1_69[[2]] == 0, na.rm = TRUE) + sum(data1_69[[6]] == 0, na.rm = TRUE)
+
+#attack rates
+AR1_69=(400000-total_zeros1_69)/400000 #0.4
+print(AR1_69) #0.4
+```
+
+\newpage
+**Figure 4. Simulation results for default scenario with constant VEs.**
+
+Note that the code generating the data is commented (above the line ### Figure 4 Panel A ###) similar to the chunk for Figure 3 as it may take several hours to generate the simulation results files from 100 simulations. If uncommented, the structure of generated data will be similar to described above for Figure 3. Similarly to Figure 3, the file 'VEpbasic_waning730f007VEsconstant.csv' along with three files for the simulation closest to the average ('susceptibleVEsconstant38.csv', 'barplotALLVEsconstant38.csv', 'barplotALLSVEsconstant38.csv'), are provided for further analysis and plotting the results, allowing you to skip running the actual simulations.
+
+```{r figure4, echo=FALSE, warning=FALSE, message=FALSE, fig.align='center'}
+
+rm(list=ls()) 
+library(readr)   # Read tabular data.
+library(tidyr)   # Data frame tidying functions.
+library(dplyr)   # General data frame manipulation.
+library(ggplot2) # Flexible plotting.
+
+# VEmodelwithbarplots<-function(frac1,frac2,alpha1,alpha2,alpha3,alpha4,beta1,beta2,beta3,beta4,VEswaning,VEpwaning,m){ #m is the number of simulations
+#   with(as.list(c(frac1,frac2,alpha1,alpha2,alpha3,alpha4,beta1,beta2,beta3,beta4,VEswaning,VEpwaning,m)),{ # m is the number of the simulation
+# # population
+# N =200000 #number of unvaccinated people      
+# NV=200000 #number of vaccinated people 
+# #Unvaccinated
+# infection_force = 1./180.   #4./180. # 30% attack rate over 180 days; to be adjusted
+# infection_to_serious_force = 1/10. # base chance to get severe disease if infected
+# #Vaccinated
+# infection_forceV = 1./180. #4./180
+# infection_to_serious_forceV = 1/10. # base chance to get severe disease if infected while being vaccinated
+# 
+# if (VEswaning>0) {
+# VEs_waining= (alpha2-alpha4)/VEswaning #(alpha2-alpha4)/180.
+# }
+# if (VEpwaning>0) {
+# VEp_waining= (beta2-beta4)/VEpwaning 
+# }
+# 
+# group1=ceiling(N*frac1)
+# group3=ceiling(NV*frac2)
+# 
+# ###########################block for unvaccinated##################################
+# #initializing groups S and SS with different protection
+# S = 0.0*(1:N)
+# SS = 0.0*(1:N)
+# infect=0*(1:N)
+# ser=0*(1:N) #severe cases
+# 
+# #two groups: 'vulnerable'(group1) and 'immunocompetent'
+# S[1:group1]=alpha1 # protection against infection in unvaccinated: 1 means base, <1 means more protected
+# S[(group1+1):N]=alpha2
+# SS[1:group1]=beta1 # protection against severe disease: 1 means base, <1 means more protected
+# SS[(group1+1):N]=beta2 
+# 
+# for (i in 1:180) #i corresponds to the day, j corresponds to the individal/person
+# { # cycle per days
+#   for (j in 1:N) # cycle per people
+#   {
+#     if ((infect[j]==0) && (infection_force*S[j] > runif(1))) # infection probability
+#     {
+#       infect[j]=i #day of infection
+#       if (infection_to_serious_force*SS[j] > runif(1)) # progression to severe probability
+#       {
+#         ser[j]=i #day of becoming severely ill
+#       }
+#     }
+#   }
+# }
+# 
+# #calculate at what month each person was infected; 0 - person is not infected
+# infect_month=(infect+30)%/%31 
+# 
+# a=data.frame(S,infect,infect_month,ser)
+# b = a %>% group_by(infect) %>% summarise(mean=mean(S))
+# 
+# #infect_month=0 in 'c' shows the line for uninfected; if absent -all infected; if '6' is absent - noone infected during month 6
+# c = a %>% group_by(infect_month) %>% summarise(mean_per_Month=mean(S),N=n())
+# 
+# ser_month=(ser+30)%/%30.1
+# a_ss=data.frame(S,ser,ser_month)
+# ##ser_month=0 in 'd' shows the line for those not progressed to severe disease 
+# d = a_ss %>% group_by(ser_month) %>% summarise(SS_per_Month=mean(S),Nser=n())
+# 
+# ###############################################vaccinated##############################
+# #initializing groups S and SS with different protection
+# SV = 0.0*(1:NV)
+# SSV = 0.0*(1:NV)
+# infectV=0*(1:NV)
+# serV=0*(1:NV)
+# 
+# #two groups: 'vulnerable'(group3) and 'immunocompetent'in vaccinated
+# SV[1:group3]=alpha3 # protection against infection in vaccinated: 1 means base, <1 means more protected
+# SSV[1:group3]=beta3 # protection against severe disease in vaccinated: 1 means base, <1 means more protected
+# 
+# if (VEswaning==0) {
+# # #two lines below are needed only for stable progression to severe disease#
+# # #also need to comment the line SSV=SV below
+#   SV[(group3+1):NV]=alpha4
+# }
+# 
+# if (VEpwaning==0) {
+# # #two lines below are needed only for stable progression to severe disease#
+# # #also need to comment the line SSV=SV below
+#   SSV[(group3+1):NV]=beta4
+# }
+# 
+# for (i in 1:180)  { # cycle per days
+#   if (VEswaning>0) {
+#   SV[(group3+1):NV]=alpha4
+#   alpha4=min(alpha2,alpha4+VEs_waining)
+#   }
+#   if (VEpwaning>0) {
+#   SSV[(group3+1):NV]=beta4
+#   beta4=min(beta2,beta4+VEp_waining)
+#   }
+# 
+#   for (j in 1:N) # cycle per people
+#   {
+#     if ((infectV[j]==0) && (infection_forceV*SV[j] > runif(1))) # infection probability
+#     {
+#       infectV[j]=i
+#       if (infection_to_serious_forceV*SSV[j] > runif(1)) # serious probability
+#       {
+#         serV[j]=i
+#       }
+#     }
+#   }
+# }
+# sum_infectV=sum(infectV>0)
+# sum_serV= sum(serV>0)
+# ratio_inf_to_serV = sum(infectV>0)/sum(serV>0)
+# 
+# infect_monthV=(infectV+30)%/%31
+# aV=data.frame(SV,infectV,infect_monthV,serV)
+# bV = aV %>% group_by(infectV) %>% summarise(mean=mean(SV))
+# cV = aV %>% group_by(infect_monthV) %>% summarise(mean_per_MonthV=mean(SV),NV=n())
+#  
+# ser_monthV=(serV+30)%/%30.1
+# a_ssV=data.frame(SV,serV,ser_monthV)
+# dV = a_ssV %>% group_by(ser_monthV) %>% summarise(SS_per_MonthV=mean(SV),NserV=n())
+# 
+# #########generate file to report susceptible left######
+# susceptible=data.frame(S,infect,infect_month,ser,SV,infectV,infect_monthV,serV)
+# write.csv(susceptible, file = paste0("susceptibleVEsconstant",m,".csv"), row.names = FALSE)
+# ###############################################################################################
+# ######################################BAR PLOTS################################################
+# # adding labels
+# SG = rep('', times=N) # group label
+# SG[1:group1]='1' # 
+# SG[(group1+1):N]='2'
+# 
+# a_per_group=data.frame(SG,S,infect_month)
+# c_per_group = a_per_group %>%
+#   filter(infect_month > 0 ) %>%
+#   group_by(SG,infect_month) %>% 
+#   summarise(mean_per_Month=mean(S),N_inf=n())
+# # plotting
+# barplotU = data.frame(G = c_per_group$SG ,Month = c_per_group$infect_month,N_inf = c_per_group$N_inf)
+# 
+# SVG = rep('', times=N) #group label
+# SVG[1:group3]="3"
+# SVG[(group3+1):NV]="4"
+# 
+# ##############################Bar Plot for Infected##################################
+# av_per_group=data.frame(SVG,SV,infect_monthV)
+# cv_per_group = av_per_group %>%
+#   filter(infect_monthV > 0 ) %>%
+#   group_by(SVG,infect_monthV) %>% 
+#   summarise(mean_per_Month=mean(SV),N_inf=n())
+# barplotV = data.frame(G = cv_per_group$SVG ,Month = cv_per_group$infect_monthV,N_inf= cv_per_group$N_inf)
+# 
+# # all four groups combined for the bar plot
+# barplotALL=rbind(barplotU,barplotV)
+# write.csv(barplotALL, file = paste0("barplotALLVEsconstant",m,".csv"), row.names = FALSE)
+# 
+# ##############################Bar Plot for Severe##################################
+# #################progressed to severe in unvaccinated###################
+# as_per_group=data.frame(SG,S,ser_month)
+# cs_per_group = as_per_group %>%
+#   filter(ser_month > 0 ) %>%
+#   group_by(SG,ser_month) %>% 
+#   summarise(mean_per_Month=mean(S),N_ser=n())
+# barplotSU = data.frame(G = cs_per_group$SG ,Month = cs_per_group$ser_month,N_ser= cs_per_group$N_ser)
+# #####progressed to severe in vaccinated###################
+# avs_per_group=data.frame(SVG,SV,ser_monthV)
+# cvs_per_group = avs_per_group %>%
+#   filter(ser_monthV > 0 ) %>%
+#   group_by(SVG,ser_monthV) %>% 
+#   summarise(mean_per_Month=mean(SV),N_ser=n())
+# barplotSV = data.frame(G = cvs_per_group$SVG ,Month = cvs_per_group$ser_monthV,N_ser= cvs_per_group$N_ser)
+# 
+# barplotALLS=rbind(barplotSU,barplotSV)
+# write.csv(barplotALLS, file = paste0("barplotALLSVEsconstant",m,".csv"), row.names = FALSE)
+# ###############################################################################################
+# ##################################calculating VEp###############################
+# VEp=1-(dV$NserV/cV$NV)[2:7]/(d$Nser/c$N)[2:7] 
+#    return(VEp)
+#    })
+# }
+# 
+# set.seed(123) #setting seed keeps ALL 100 simulations the same if you repeat it
+# simul_number=100
+# VEpbasic <- matrix(NA,nrow=simul_number,ncol=6)
+# for (m in 1:simul_number) {
+# VEpbasic[m,] <- VEmodelwithbarplots(0.07,0.07,1,1,1,0.03,1,0.5,1,0.03,0,0,m)
+# }
+# write.csv(VEpbasic, file = "VEpbasic_waning730f007VEsconstant.csv", row.names = FALSE)
+
+#################  UNCOMMENT LINES ABOVE TO GENERATE THE DATA FILEs ########################
+
+###########################  Figure 4 Panel A   ############################################
+#Finding the closest to the average curve and it's number
+
+########Plotting all 100 simulation and the one that is closest to average####################
+
+Plotting100<-function(filename){ 
+  with(as.list(c(filename)),{
+    
+# Read the CSV file
+file = paste0(filename, ".csv")
+data <- read.csv(file)
+  
+strings <- data
+# Calculate the overall average values 
+overall_averaged_values <- apply(strings, 2, mean) 
+
+# Function to find the string with the closest values to the overall averaged values 
+find_closest_string <- function(strings, overall_averaged_values) { 
+  # Calculate the distances between each string and the overall averaged values 
+  distances <- apply(strings, 1, function(x) sqrt(sum((x - overall_averaged_values)^2))) 
+  # Find the index of the string with the minimum distance 
+  closest_string_index <- which.min(distances) 
+  return(list(string = strings[closest_string_index, ], index = closest_string_index)) 
+  } 
+# Find the closest string to the overall averaged values 
+closest_string <- find_closest_string(strings, overall_averaged_values) 
+
+pdf(file = paste0(filename, ".pdf"), width = 6.7, height = 5.5, family = "Helvetica", pointsize = 12, onefile = TRUE)
+# Plot all strings 
+matplot(1:6, t(strings), type = "l", col = "grey", lty = 1, xlab = "Study Month", ylab = "VEp") 
+# Plot the chosen closest string as a thick line 
+lines(1:6, closest_string$string, type = "l", lwd = 2) 
+#legend("topleft", legend = paste("Closest to Average (VEp#", closest_string$index,")", sep = " "), col = "black", lwd = 2)
+dev.off()
+     return(closest_string$index)
+   })
+ }
+
+################finding the closest to averaged VE values for each condition ############ 
+allfilenames <- c("VEpbasic_waning730f007VEsconstant")
+
+for (k in 1:length(allfilenames)) {
+index=Plotting100(allfilenames[k])
+file = paste0(allfilenames[k], ".csv")
+data=read.csv(file)
+
+# Extract the specific row and convert it to a numeric vector
+# Create the variable with the name in the name vector
+#the result is a varibale with the name allfilenames[i] that has the simulation values closest to the 100 simulation average
+assign(allfilenames[k], as.numeric(data[index,]), envir = .GlobalEnv)
+}
+
+print ("Figure 4 Panel A")
+knitr::include_graphics("VEpbasic_waning730f007VEsconstant.pdf")
+###################################  Figure 4 Panel B   ################################
+# Load the CSV file
+data <- read.csv("susceptibleVEsconstant38.csv") 
+
+# Extract relevant columns (assuming 2nd and 6th columns contain infection dates)
+infection_dates <- data[[2]]
+infection_dates_vaccinated <- data[[6]]
+
+# Define groups
+group1 <- infection_dates[1:14001]
+group2 <- infection_dates[14002:200000]
+group3 <- infection_dates_vaccinated[1:14001]
+group4 <- infection_dates_vaccinated[14002:200000]
+total <- rbind(group1, group2, group3, group4)
+
+# Function to calculate the fraction of susceptible people per day
+fraction_susceptible <- function(group, days = 1:180) {
+  total <- length(group)  # Total individuals in the group
+
+  # Calculate the fraction of susceptible individuals per day
+  sapply(days, function(day) {
+    still_susceptible <- sum(group == 0 | group > day)  # Count individuals not infected by this day
+    still_susceptible / total  # Fraction of susceptible individuals
+  })
+}
+
+# Apply the function to each group
+frac1 <- fraction_susceptible(group1)
+frac2 <- fraction_susceptible(group2)
+frac3 <- fraction_susceptible(group3)
+frac4 <- fraction_susceptible(group4)
+
+# Prepare data for plotting (include day 0 as 1 for all groups)
+plot_data <- data.frame(
+  Days = rep(0:180, 4),  # Days for x-axis positioning
+  Fraction = c(1, frac1, 1, frac2, 1, frac3, 1, frac4),  # Fractions for each group
+  Group = factor(rep(1:4, each = 181))  # Group labels
+)
+
+# Define color-blind-friendly colors for the groups
+ColorBlindFriendly <- c("#E69F00", "#56B4E9", "#800080", "#009E73")
+
+# Create the plot using ggplot2
+ggplot(plot_data, aes(x = Days, y = Fraction, color = Group)) +
+  geom_line(size = 1.5) +  # Make lines thicker with size parameter
+  scale_colour_manual(values = ColorBlindFriendly) +
+  scale_x_continuous(
+    breaks = seq(0, 180, by = 30),  # Set breaks at every 30 days
+    labels = c("0", "1", "2", "3", "4", "5", "6")  # Correct labels
+  ) +
+  labs(
+    #title = "Fraction of Susceptible Individuals in Different Groups",
+    x = "Study Month",  # X-axis label
+    y = "Fraction of Susceptible",  # Y-axis label
+    color = "Group"  # Legend title
+  ) +
+  theme(
+    axis.title.x = element_text(size = 18),  # X-axis label size
+    axis.title.y = element_text(size = 18),  # Y-axis label size
+    axis.text.x = element_text(size = 18),   # X-axis tick label size
+    axis.text.y = element_text(size = 18),   # Y-axis tick label size
+    legend.title = element_text(size = 18),  # Legend title size
+    legend.text = element_text(size = 18)    # Legend text size
+  )
+print ("Figure 4 Panel B")
+ggsave("Figure4PanelB.eps", width = 6, height = 4.5, device = "eps")
+
+####################################### PanelC ########################################
+
+barplotALL <- read.csv(file="barplotALLVEsconstant38.csv", row.names = NULL)
+
+# Ensure 'Group' is a factor
+barplotALL$Group <- as.factor(barplotALL$Group)
+
+# Define colors for each group 
+ColorBlindFriendly <- c("#E69F00", "#56B4E9", "#800080", "#009E73")
+# Define darker versions of the colors for the borders
+DarkerBorders <- c("#B36200", "#377CB3", "#4B0082", "#006F4D")
+
+# Basic bar plot with color-blind-friendly palette and darker borders
+ggplot(barplotALL, aes(x = factor(Month), y = N_inf, fill = Group, colour = Group)) +
+  geom_bar(stat = "identity", width = 0.7, size = 0.8) +  # Bars with borders
+  scale_fill_manual(values = ColorBlindFriendly) +  # Use color-blind-friendly fill colors
+  scale_colour_manual(values = DarkerBorders) +  # Use darker colors for the borders
+  theme(
+    axis.text = element_text(size = 14),  # Increase size of axis tick numbers
+    axis.title = element_text(size = 16),  # Increase size of axis titles
+    legend.text = element_text(size = 12),  # Increase legend text size
+    legend.title = element_text(size = 14)  # Increase legend title size
+  ) + 
+  labs(x = "Study Month", y = "Count of Infected")   # Adjust axis labels
+print ("Figure 4 Panel C")
+ggsave("Figure4PanelC.eps", width = 6, height = 4.5, device="eps")
+
+####################################### Panel D ########################################
+barplotALLS <- read.csv(file="barplotALLSVEsconstant38.csv", row.names = NULL)
+barplotALLS$Group <- as.factor(barplotALLS$Group)
+
+# Basic bar plot with grayscale colors (no alpha adjustment)
+ggplot(barplotALLS, aes(x = factor(Month), y = N_ser, fill = Group, colour = Group)) +
+ geom_bar(stat = "identity", width = 0.7, size = 0.8) +  # Bars with borders
+  scale_fill_manual(values = ColorBlindFriendly) +  # Use color-blind-friendly fill colors
+  scale_colour_manual(values = DarkerBorders) +  # Use darker colors for the borders
+  theme(
+    axis.text = element_text(size = 14),  # Increase size of axis tick numbers
+    axis.title = element_text(size = 16),  # Increase size of axis titles
+    legend.text = element_text(size = 12),  # Increase legend text size
+    legend.title = element_text(size = 14)  # Increase legend title size
+  ) + 
+  labs(x = "Study Month", y = "Count of Severe")  # Adjust axis labels
+print ("Figure 4 Panel D")
+ggsave("Figure4PanelD.eps", width = 6, height = 4.5, device="eps")
+
+```
+
+**Figure 5. Parameter sensitivity analysis and its effect on observed VEp.**
+
+This chunk will first generate .csv files with the following names: "VEpbasic_waning730f007_1.csv", "VEp4xfaster.csv", "VEp2xslower.csv", "VEp4xslower.csv", "VEpf001.csv", "VEpf015.csv", "VEpf03.csv", "VEpbeta2_1.csv", "VEpbeta2_01.csv", "VEpalpha4_001.csv", "VEpalpha4_025.csv", "VEpalpha4_05.csv", "VEpalpha4_1.csv", "VEpbeta4_001.csv", "VEpbeta4_025.csv", "VEpbeta4_05.csv", "VEpconstantVEs.csv", "VEpwaning180.csv", "VEpwaning365.csv", "VEpwaning730.csv". These data files will have 100 simulations for each indicated condition and will be processed to find the closest to average simulation that will be used for panels in Figure 5.
+
+Note that generating these files may take a long time to complete (depending on the computer, it can take several days), so the part that generates these files is currently commented out. All .csv files that it would generate are provided for further analysis.
+
+```{r figure5, echo=FALSE, warning=FALSE, message=FALSE, fig.align='center'}
+
+rm(list=ls()) 
+library(readr)   # Read tabular data.
+library(tidyr)   # Data frame tidying functions.
+library(dplyr)   # General data frame manipulation.
+library(ggplot2) # Flexible plotting.
+
+# #########################  The part below is commented out #############################
+# VEmodel<-function(frac1,frac2,alpha1,alpha2,alpha3,alpha4,beta1,beta2,beta3,beta4,VEswaning,VEpwaning){
+#  with(as.list(c(frac1,frac2,alpha1,alpha2,alpha3,alpha4,beta1,beta2,beta3,beta4,VEswaning,VEpwaning)),{
+
+# # population
+# N =200000
+# NV=200000
+
+#########################FOR REDUCED ATTACK RATE######################
+#Unvaccinated
+# infection_force = 1./180.   #2./180. # 30% attack rate over 180 days; to be adjusted
+# infection_to_serious_force = 1/10. # base chance to get severe disease while being vaccinated
+# #Vaccinated
+# infection_forceV = 1./180. # 30% base rate infection over 180 days to be adjusted
+# infection_to_serious_forceV = 1/10. # base chance to get serious while being vaccinated
+#
+# if (VEswaning>0) {
+# VEs_waining= (alpha2-alpha4)/VEswaning #(alpha2-alpha4)/180.
+# }
+# if (VEpwaning>0) {
+# VEp_waining= (beta2-beta4)/VEpwaning #(alpha2-alpha4)/180.
+# }
+#
+# group1=ceiling(N*frac1)
+# group3=ceiling(NV*frac2)
+#
+# ####block for unvaccinated
+# #initial groups
+# S = 0.0*(1:N)
+# SS = 0.0*(1:N)
+# infect=0*(1:N)
+# ser=0*(1:N) #severe cases
+#
+# S[1:group1]=alpha1 # susceptibility 1 - means base, while 0.64 below means more protected
+# S[(group1+1):N]=alpha2
+# SS[1:group1]=beta1 # serious susceptibility
+# SS[(group1+1):N]=beta2 # serious susceptibility
+#
+# for (i in 1:180) #i corresponds to the day, j corresponds to the person
+# { # cycle per days
+#   for (j in 1:N) # cycle per people
+#   {
+#     if ((infect[j]==0) && (infection_force*S[j] > runif(1))) # infection probability
+#     {
+#       infect[j]=i #day of infection
+#       if (infection_to_serious_force*SS[j] > runif(1)) # serious probability
+#       {
+#         ser[j]=i #day of becoming severely ill
+#       }
+#     }
+#   }
+# }
+# sum_infect=sum(infect>0)
+# sum_ser= sum(ser>0)
+# ratio_inf_to_ser = sum(infect>0)/sum(ser>0)
+#
+# infect_month=(infect+30)%/%31
+# a=data.frame(S,infect,infect_month,ser)
+# b = a %>%
+#   group_by(infect) %>%
+#   summarise(mean=mean(S))
+# c = a %>%
+#   group_by(infect_month) %>%
+#   summarise(mean_per_Month=mean(S),N=n())
+#
+# ser_month=(ser+30)%/%30.1
+# a_ss=data.frame(S,ser,ser_month)
+# d = a_ss %>%
+#   group_by(ser_month) %>%
+#   summarise(SS_per_Month=mean(S),Nser=n())
+#
+# ###############################################vaccinated##############################
+# #initial groups
+# SV = 0.0*(1:NV)
+# SSV = 0.0*(1:NV)
+# infectV=0*(1:NV)
+# serV=0*(1:NV)
+#
+# SV[1:group3]=alpha3
+# SSV[1:group3]=beta3
+#
+# if (VEswaning==0) {
+# # #two lines below are needed only for stable progression to severe disease#
+# # #also need to comment the line SSV=SV below
+#   SV[(group3+1):NV]=alpha4
+# }
+#
+# if (VEpwaning==0) {
+# # #two lines below are needed only for stable progression to severe disease#
+# # #also need to comment the line SSV=SV below
+#   SSV[(group3+1):NV]=beta4
+# }
+#
+# for (i in 1:180)  { # cycle per days
+#   if (VEswaning>0) {
+#   SV[(group3+1):NV]=alpha4
+#   alpha4=min(alpha2,alpha4+VEs_waining)
+#   }
+#   if (VEpwaning>0) {
+#   SSV[(group3+1):NV]=beta4
+#   beta4=min(beta2,beta4+VEp_waining)
+#   }
+#
+#   for (j in 1:N) # cycle per people
+#   {
+#     if ((infectV[j]==0) && (infection_forceV*SV[j] > runif(1))) # infection probability
+#     {
+#       infectV[j]=i
+#       if (infection_to_serious_forceV*SSV[j] > runif(1)) # serious probability
+#       {
+#         serV[j]=i
+#       }
+#     }
+#   }
+# }
+# sum_infectV=sum(infectV>0)
+# sum_serV= sum(serV>0)
+# ratio_inf_to_serV = sum(infectV>0)/sum(serV>0)
+#
+# infect_monthV=(infectV+30)%/%31
+# aV=data.frame(SV,infectV,infect_monthV,serV)
+# bV = aV %>%
+#   group_by(infectV) %>%
+#   summarise(mean=mean(SV))
+# cV = aV %>%
+#   group_by(infect_monthV) %>%
+#   summarise(mean_per_MonthV=mean(SV),NV=n())
+#
+# ser_monthV=(serV+30)%/%30.1
+# a_ssV=data.frame(SV,serV,ser_monthV)
+# dV = a_ssV %>%
+#   group_by(ser_monthV) %>%
+#   summarise(SS_per_MonthV=mean(SV),NserV=n())
+#
+# #################calculating VEp###############################
+# VEp=1-(dV$NserV/cV$NV)[2:7]/(d$Nser/c$N)[2:7]
+#      return(VEp)
+#    })
+#  }
+#
+# ############Plotting 6 panels figure for Short Communication############
+# # #initializing data matrix
+# simul_number=100
+# VEp4xfaster <- matrix(NA,nrow=simul_number,ncol=6)
+# VEp2xslower <- matrix(NA,nrow=simul_number,ncol=6)
+# VEp4xslower <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpf001 <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpf015 <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpf03 <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpbeta2_1 <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpbeta2_01 <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpalpha4_001 <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpalpha4_025 <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpalpha4_05 <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpalpha4_1 <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpbeta4_001 <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpbeta4_025 <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpbeta4_05 <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpconstantVEs <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpwaning180 <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpwaning365 <- matrix(NA,nrow=simul_number,ncol=6)
+# VEpwaning730 <- matrix(NA,nrow=simul_number,ncol=6)
+#
+# set.seed(123) #setting seed keeps ALL 100 simulations the same if you repeat it
+# for (m in 1:simul_number) {
+#
+# VEp4xfaster[m,] <- VEmodel(0.07,0.07,1,1,1,0.03,1,0.5,1,0.03,182.5,0)
+# VEp2xslower[m,] <- VEmodel(0.07,0.07,1,1,1,0.03,1,0.5,1,0.03,1460,0)
+# VEp4xslower[m,] <- VEmodel(0.07,0.07,1,1,1,0.03,1,0.5,1,0.03,2920,0)
+# print(m)
+# VEpf001[m,] <- VEmodel(0.01,0.01,1,1,1,0.03,1,0.5,1,0.03,730,0)
+# VEpf015[m,] <- VEmodel(0.15,0.15,1,1,1,0.03,1,0.5,1,0.03,730,0)
+# VEpf03[m,]  <- VEmodel(0.3,0.3,1,1,1,0.03,1,0.5,1,0.03,730,0)
+# print(m)
+# VEpbeta2_1[m,] <- VEmodel(0.07,0.07,1,1,1,0.03,1,1,1,0.03,730,0)
+# VEpbeta2_01[m,] <- VEmodel(0.07,0.07,1,1,1,0.03,1,0.1,1,0.03,730,0)
+# VEpalpha4_001[m,] <- VEmodel(0.07,0.07,1,1,1,0.01,1,0.5,1,0.03,730,0)
+# print(m)
+# VEpalpha4_025[m,] <- VEmodel(0.07,0.07,1,1,1,0.25,1,0.5,1,0.03,730,0)
+# VEpalpha4_05[m,] <- VEmodel(0.07,0.07,1,1,1,0.5,1,0.5,1,0.03,730,0)
+# VEpalpha4_1[m,] <- VEmodel(0.07,0.07,1,1,1,1,1,0.5,1,0.03,730,0)
+# print(m)
+# VEpbeta4_001[m,] <- VEmodel(0.07,0.07,1,1,1,0.03,1,0.5,1,0.01,730,0)
+# VEpbeta4_025[m,] <- VEmodel(0.07,0.07,1,1,1,0.03,1,0.5,1,0.25,730,0)
+# VEpbeta4_05[m,]  <- VEmodel(0.07,0.07,1,1,1,0.03,1,0.5,1,0.5,730,0)
+# VEpconstantVEs[m,] <- VEmodel(0.07,0.07,1,1,1,0.03,1,0.5,1,0.03,0,0)
+# VEpwaning180[m,] <- VEmodel(0.07,0.07,1,1,1,0.03,1,0.5,1,0.03,730,180)
+# VEpwaning365[m,] <- VEmodel(0.07,0.07,1,1,1,0.03,1,0.5,1,0.03,730,365)
+# VEpwaning730[m,] <- VEmodel(0.07,0.07,1,1,1,0.03,1,0.5,1,0.03,730,730)
+# print(m)
+# }
+# write.csv(VEp4xfaster, file = "VEp4xfaster.csv", row.names = FALSE)
+# write.csv(VEp2xslower, file = "VEp2xslower.csv", row.names = FALSE)
+# write.csv(VEp4xslower, file = "VEp4xslower.csv", row.names = FALSE)
+# write.csv(VEpf001, file = "VEpf001.csv", row.names = FALSE)
+# write.csv(VEpf015, file = "VEpf015.csv", row.names = FALSE)
+# write.csv(VEpf03, file = "VEpf03.csv", row.names = FALSE)
+# write.csv(VEpbeta2_1, file = "VEpbeta2_1.csv", row.names = FALSE)
+# write.csv(VEpbeta2_01, file = "VEpbeta2_01.csv", row.names = FALSE)
+# write.csv(VEpalpha4_001, file = "VEpalpha4_001.csv", row.names = FALSE)
+# write.csv(VEpalpha4_025, file = "VEpalpha4_025.csv", row.names = FALSE)
+# write.csv(VEpalpha4_05, file = "VEpalpha4_05.csv", row.names = FALSE)
+# write.csv(VEpalpha4_1, file = "VEpalpha4_1.csv", row.names = FALSE)
+# write.csv(VEpbeta4_001, file = "VEpbeta4_001.csv", row.names = FALSE)
+# write.csv(VEpbeta4_025, file = "VEpbeta4_025.csv", row.names = FALSE)
+# write.csv(VEpbeta4_05, file = "VEpbeta4_05.csv", row.names = FALSE)
+# write.csv(VEpconstantVEs, file = "VEpconstantVEs.csv", row.names = FALSE)
+# write.csv(VEpwaning180, file = "VEpwaning180.csv", row.names = FALSE)
+# write.csv(VEpwaning365, file = "VEpwaning365.csv", row.names = FALSE)
+# write.csv(VEpwaning730, file = "VEpwaning730.csv", row.names = FALSE)
+
+#### UNCOMMENT THE LINES ABOVE IF YOU WOULD LIKE TO GENERATE ALL .csv FILES FROM SCRATCH #########
+
+########Plotting all 100 simulation and the one that is closest to average##################
+#it also create the cariable for VEp with the name of the file and data for closest to average
+
+Plotting100<-function(filename){ 
+  with(as.list(c(filename)),{
+    
+# Read the CSV file
+file = paste0(filename, ".csv")
+data <- read.csv(file)
+  
+strings <- data
+# Calculate the overall average values 
+overall_averaged_values <- apply(strings, 2, mean) 
+
+# Function to find the string with the closest values to the overall averaged values 
+find_closest_string <- function(strings, overall_averaged_values) { 
+  # Calculate the distances between each string and the overall averaged values 
+  distances <- apply(strings, 1, function(x) sqrt(sum((x - overall_averaged_values)^2))) 
+  # Find the index of the string with the minimum distance 
+  closest_string_index <- which.min(distances) 
+  return(list(string = strings[closest_string_index, ], index = closest_string_index)) 
+  } 
+# Find the closest string to the overall averaged values 
+closest_string <- find_closest_string(strings, overall_averaged_values) 
+
+pdf(file = paste0(filename, ".pdf"), width = 6.7, height = 5.5, family = "Helvetica", pointsize = 12, onefile = TRUE)
+# Plot all strings 
+matplot(1:6, t(strings), type = "l", col = "grey", lty = 1, xlab = "Study Month", ylab = "VEp") 
+# Plot the chosen closest string as a thick line 
+lines(1:6, closest_string$string, type = "l", lwd = 2) 
+#legend("topleft", legend = paste("Closest to Average (VEp#", closest_string$index,")", sep = " "), col = "black", lwd = 2)
+dev.off()
+     return(closest_string$index)
+   })
+ }
+
+################finding the closest to averaged VE values for each condition ############ 
+allfilenames <- c("VEpbasic_waning730f007_1","VEp4xfaster","VEp2xslower","VEp4xslower","VEpf001","VEpf015","VEpf03","VEpbeta2_1","VEpbeta2_01","VEpalpha4_001","VEpalpha4_025","VEpalpha4_05","VEpalpha4_1","VEpbeta4_001","VEpbeta4_025","VEpbeta4_05","VEpconstantVEs","VEpwaning180","VEpwaning365","VEpwaning730")
+
+for (k in 1:length(allfilenames)) {
+index=Plotting100(allfilenames[k])
+file = paste0(allfilenames[k], ".csv")
+data=read.csv(file)
+# Extract the specific row and convert it to a numeric vector
+# Create the variable with the name in the name vector
+#the result is a varibale with the name allfilenames[i] that has the simulation values closest to the 100 simulation average
+assign(allfilenames[k], as.numeric(data[index,]), envir = .GlobalEnv)
+}
+##########################################################################################
+
+pdf(file = "Figure5.pdf", width = 12, height = 7, family = "Helvetica", pointsize = 12, onefile = TRUE)
+
+VEpbaseline=VEpbasic_waning730f007_1
+ymin_value=-1.
+# Set margins to reduce space between panels and make room for axis titles
+par(mfrow = c(2, 3), mar = c(4.5, 4, 1, 1)+0.5) #+0.5 moves the axes titles closer to the axes
+########################### Panel A  ###############################
+#######################Different extent of VEs waning##########
+plot(c(1:6), VEpbaseline, ylim=c(ymin_value,1),xlab="Study Month", ylab= "VEp", cex=1.5, pch=17, cex.lab=1.5, cex.axis=1.5)
+points(c(1:6), VEp4xfaster, col='purple', cex=1.5, pch=16)
+points(c(1:6), VEp2xslower, col='blue', cex=1.5, pch=15)
+points(c(1:6), VEp4xslower, col='orange', cex=1.5, pch=8)
+points(c(1:6), VEpconstantVEs, col='darkcyan', cex=1.5, pch=9)
+legend(4,-0.2, # places a legend at the appropriate place 
+c("4X faster","baseline", "2X slower","4X slower","VEs=constant"), # puts text in the legend 
+pch=c(16,17,15,8,9), # gives the legend appropriate symbols (lines)
+bty = "n", #to remove the box around the legend
+col=c("purple", "black", "blue","orange","darkcyan"), cex=1.2)
+mtext("A", side = 3, line = -1, adj = -0.18, cex = 1.5)
+#################
+#######################Panel B###################
+plot(c(1:6), VEpf001, ylim=c(ymin_value,1),xlab="Study Month", ylab= "VEp", cex=1.5, pch=16, col='purple', cex.lab=1.5, cex.axis=1.5)
+points(c(1:6), VEpbaseline, col='black', cex=1.5, pch=17)
+points(c(1:6), VEpf015, col='blue', cex=1.5, pch=15)
+points(c(1:6), VEpf03, col='orange', cex=1.5, pch=8)
+legend(4,-0.2, # places a legend at the appropriate place 
+c("f1=f2=0.01","f1=f2=0.07","f1=f2=0.15", "f1=f2=0.3"), # puts text in the legend 
+pch=c(16,17,15,8), # gives the legend appropriate symbols (lines)
+bty = "n", #to remove the box around the legend
+col=c("purple","black","blue","orange"), cex=1.2)
+mtext("B", side = 3, line = -1, adj = -0.18, cex = 1.5)
+#################
+#######################Panel C###################
+plot(c(1:6), VEpbaseline, ylim=c(-3.,1),xlab="Study Month", ylab= "VEp", cex=1.5, pch=17, cex.lab=1.5, cex.axis=1.5)
+points(c(1:6), VEpbeta2_1, col='purple', cex=1.5, pch=16)
+points(c(1:6), VEpbeta2_01, col='blue', cex=1.5, pch=15)
+legend(4,-1.8, # places a legend at the appropriate place 
+c(expression(paste(beta,"2=0.1")),expression(paste(beta,"2=0.5")),expression(paste(beta,"2=1"))), # puts text in the legend 
+pch=c(15,17,16), # gives the legend appropriate symbols (lines)
+bty = "n", #to remove the box around the legend
+col=c("blue","black", "purple"), cex=1.2)
+mtext("C", side = 3, line = -1, adj = -0.18, cex = 1.5)
+#################
+#######################Panel D###################
+plot(c(1:6), VEpbaseline, ylim=c(ymin_value,1),xlab="Study Month", ylab= "VEp", cex=1.5, pch=17, cex.lab=1.5, cex.axis=1.5)
+points(c(1:6), VEpalpha4_001, col='blue', cex=1.5, pch=15)
+points(c(1:6), VEpalpha4_025, col='brown', cex=1.5, pch=1)
+points(c(1:6), VEpalpha4_1, col='purple', cex=1.5, pch=16)
+legend(4,-0.2, # places a legend at the appropriate place 
+c(expression(paste(alpha,"4=0.01")),expression(paste(alpha,"4=0.03")),expression(paste(alpha,"4=0.25")),expression(paste(alpha,"4=1"))), # puts text in the legend 
+pch=c(15,17,1,16), # gives the legend appropriate symbols (lines)
+bty = "n", #to remove the box around the legend
+col=c("blue", "black", "brown","purple"), cex=1.2)
+mtext("D", side = 3, line = -1, adj = -0.18, cex = 1.5)
+#################
+#######################Panel E###################
+plot(c(1:6), VEpbaseline, ylim=c(ymin_value,1),xlab="Study Month", ylab= "VEp", cex=1.5, pch=17, cex.lab=1.5, cex.axis=1.5)
+points(c(1:6), VEpbeta4_001, col='purple', cex=1.5, pch=16)
+points(c(1:6), VEpbeta4_025, col='blue', cex=1.5, pch=15)
+points(c(1:6), VEpbeta4_05, col='orange', cex=1.5, pch=8)
+legend(4,-0.2, # places a legend at the appropriate place 
+c(expression(paste(beta,"4=0.01")),expression(paste(beta,"4=0.03")),expression(paste(beta,"4=0.25")),expression(paste(beta,"4=0.5"))), # puts text in the legend 
+#c("beta4=0.03", "beta4=0.25","beta4=0.5"), # puts text in the legend 
+pch=c(16,17,15,8), # gives the legend appropriate symbols (lines)
+bty = "n", #to remove the box around the legend
+col=c("purple","black", "blue","orange"), cex=1.2)
+mtext("E", side = 3, line = -1, adj = -0.18, cex = 1.5)
+#################
+#######################Panel F###################
+#waning of VEp
+plot(c(1:6), VEpbaseline, ylim=c(ymin_value,1),xlab="Study Month", ylab= "VEp", cex=1.5, pch=17, cex.lab=1.5, cex.axis=1.5)
+points(c(1:6), VEpwaning180, col='darkcyan', cex=1.5, pch=9) #6 month
+points(c(1:6), VEpwaning365, col='orange', cex=1.5, pch=8) #1year
+points(c(1:6), VEpwaning730, col='blue', cex=1.5, pch=15) #900 days
+legend(4,-0.2, # places a legend at the appropriate place 
+c("VEp=constant", "2-year waning", "1-year waning","6month waning"), # puts text in the legend 
+pch=c(17,15,8,9), # gives the legend appropriate symbols (lines)
+bty = "n", #to remove the box around the legend
+col=c("black","blue", "orange","darkcyan"), cex=1.2)
+mtext("F", side = 3, line = -1, adj = -0.18, cex = 1.5)
+
+dev.off()
+
+knitr::include_graphics("Figure5.pdf")
+```
+
+\newpage
+
+**Figure 6. Simulation results from a sensitivity analysis that integrates within-subgroup heterogeneity in VEs and VEp.**
+
+Figure 6 Panels A-C plot the results of sampling individual parameters describing vaccine-induced protection in vulnerable (Group 3) and immunocompetent (Group 4) individuals from corresponding Beta distributions.
+
+```{r figure6_beta_distributions, echo=FALSE, warning=FALSE, message=FALSE}
+rm(list=ls()) 
+
+plot_beta_distributions <- function(alpha_immunocompetent, beta_immunocompetent, alpha_vulnerable, beta_vulnerable,
+   output_file = "betadistributions.pdf", #save it as default 
+   output_file2 = "betadistributions2.pdf", #save it as default 
+   vulnerable_color = rgb(0.502, 0, 0.502, 0.8), #rgb(1, 0.65, 0, 0.5), 
+   immunocompetent_color = rgb(0, 0.62, 0.451, 0.8)) {   #rgb(0, 0, 1, 0.5)) {
+  
+  set.seed(123) ## Set seed for reproducibility
+  # Generate samples for both groups
+  sample_vulnerable <- rbeta(1000, alpha_vulnerable, beta_vulnerable)
+  sample_immunocompetent <- rbeta(1000, alpha_immunocompetent, beta_immunocompetent)
+  
+  # Open PDF to save the plot
+  pdf(file = output_file, width = 6.7, height = 5.5, family = "Helvetica", pointsize = 12)
+  
+  # Adjust plot settings
+  par(mgp = c(2.4, 1, 0)) 
+  breaks <- seq(0, 1, length.out = 31)  # Define common breaks
+  
+  # Plot histograms with common breaks
+  hist(sample_vulnerable, breaks = breaks, col = vulnerable_color, 
+       xlab = "Coefficient", xlim = c(0, 1), ylim = c(0, 800), 
+       cex.axis = 1.6, cex.lab = 1.6, main = "")
+  hist(sample_immunocompetent, breaks = breaks, col = immunocompetent_color, 
+       add = TRUE)
+  legend("top", legend = c("Vulnerable", "Immunocompetent"), fill = c(vulnerable_color, immunocompetent_color), cex = 1.5, bty = "n")  
+
+  dev.off() ## Close the PDF device
+
+}
+
+################################ Figure 6 Panel A ###########################################
+# Parameters for the two Beta distributions (almost non-overlapping)
+#These parameters ensure the variance is approximately 0.01, with the means centered at 0.05 and 0.95, for immunocompetent and vulnerable, respectively.
+plot_beta_distributions(0.1875, 3.5625, 3.5625, 0.1875,"Figure6A.pdf")
+
+################################ Figure 6 Panel B ###########################################
+#These parameters ensure the variance is approximately 0.01, with the means centered at 0.1 and 0.9, for immunocompetent and vulnerable, respectively.
+plot_beta_distributions(0.8, 7.2, 7.2, 0.8,"Figure6B.pdf")
+
+################################ Figure 6 Panel C ###########################################
+#These parameters ensure the variance is approximately 0.01, with the means centered at 0.3 and 0.7, for immunocompetent and vulnerable, respectively.
+plot_beta_distributions(6, 14, 14, 6,"Figure6C.pdf")
+
+print ("Figure 6A")
+knitr::include_graphics("Figure6A.pdf")
+print ("Figure 6B")
+knitr::include_graphics("Figure6B.pdf")
+print ("Figure 6C")
+knitr::include_graphics("Figure6C.pdf")
+```
+
+Next three chucks generate the data for Figure 6D,E,F. The code is commented, the data files that would be generated  ("VEpbasic_waning730f007_1_0_3_0_7_uncor.csv") are provided for further analysis. 
+```{r Figure6F, include=FALSE}
+
+# rm(list=ls()) 
+# library(readr)   # Read tabular data.
+# library(tidyr)   # Data frame tidying functions.
+# library(dplyr)   # General data frame manipulation.
+# library(ggplot2) # Flexible plotting.
+# 
+# VEmodelwithbarplots<-function(frac1,frac2,alpha1,alpha2,alpha3,alpha4,beta1,beta2,beta3,beta4,VEswaning,VEpwaning,m){ #m is the number of simulations
+#   with(as.list(c(frac1,frac2,alpha1,alpha2,alpha3,alpha4,beta1,beta2,beta3,beta4,VEswaning,VEpwaning,m)),{ # m is the number of the simulation
+# # population
+# N =200000 #number of unvaccinated people      
+# NV=200000 #number of vaccinated people 
+# 
+# adjust_alpha=1
+# adjust_beta=1 #1/0.8 where 0.8 is a mean value for vulnerable group
+# 
+# #Unvaccinated
+# infection_force = 1/180.*adjust_alpha   #4./180. # 30% attack rate over 180 days; to be adjusted
+# infection_to_serious_force = 1/10*adjust_beta # base chance to get severe disease if infected
+# #Vaccinated
+# infection_forceV = 1/180.*adjust_alpha #4./180
+# infection_to_serious_forceV = 1/10.*adjust_beta # base chance to get severe disease if infected while being vaccinated
+# 
+# group1=ceiling(N*frac1)-1 #correction
+# group3=ceiling(NV*frac2)-1 #correction
+# 
+# ####Setting the risk of progression to severe disease######
+# # These parameters ensure the variance is approximately 0.01, with the means centered at 0.3 and 0.95, for immunocompetent and vulnerable, respectively.
+# alpha_vulnerable <- 14
+# beta_vulnerable <- 6
+# 
+# alpha_immunocompetent <- 6
+# beta_immunocompetent <- 14
+# 
+# sample_vulnerableV <- NULL
+# sample_immunocompetentV <- NULL
+# 
+# # Sample coefficients for both groups for parameter 'beta' in the model
+# sample_vulnerableV[1:group3] <- rbeta(group3, alpha_vulnerable, beta_vulnerable)
+# sample_immunocompetentV[1:(NV-group3)] <- rbeta((NV-group3), alpha_immunocompetent, beta_immunocompetent)
+# 
+# sample_vulnerableV_dif <- NULL
+# sample_immunocompetentV_dif <- NULL
+# 
+# #if uncorrelated this is for alpha
+# sample_vulnerableV_dif[1:group3] <- rbeta(group3, alpha_vulnerable, beta_vulnerable)
+# sample_immunocompetentV_dif[1:(NV-group3)] <- rbeta((NV-group3), alpha_immunocompetent, beta_immunocompetent)
+# 
+# # #case when correlated
+# # sample_vulnerableV_dif[1:group3]=sample_vulnerableV[1:group3]
+# # sample_immunocompetentV_dif[1:(NV-group3)]=sample_immunocompetentV[1:(NV-group3)]
+# 
+# alpha3v=mean(sample_vulnerableV_dif)
+# alpha4v=mean(sample_immunocompetentV_dif)
+# print(alpha3v)
+# print(alpha4v)
+# beta3v=mean(sample_vulnerableV)
+# beta4v=mean(sample_immunocompetentV)
+# print(beta3v)
+# print(beta4v)
+# 
+# if (VEswaning>0) {
+# VEs_waining= (alpha2-alpha4v)/VEswaning #(alpha2-alpha4)/180.
+# VEs_waining_V= (alpha1-alpha3v)/VEswaning #for vulnerable group
+# }
+# if (VEpwaning>0) {
+# VEp_waining= (beta2-beta4v)/VEpwaning 
+# VEp_waining_V= (beta1-beta3v)/VEpwaning 
+# }
+# 
+# ###########################block for unvaccinated##################################
+# #initializing groups S and SS with different protection
+# S = 0.0*(1:N)
+# SS = 0.0*(1:N)
+# infect=0*(1:N)
+# ser=0*(1:N) #severe cases
+# 
+# #two groups: 'vulnerable'(group1) and 'immunocompetent'
+# S[1:group1]=alpha1 # protection against infection in unvaccinated: 1 means base, <1 means more protected
+# S[(group1+1):N]=alpha2
+# SS[1:group1]=beta1 # protection against severe disease: 1 means base, <1 means more protected
+# SS[(group1+1):N]=beta2 
+# 
+# for (i in 1:180) #i corresponds to the day, j corresponds to the individal/person
+# { # cycle per days
+#   for (j in 1:N) # cycle per people
+#   {
+#     if ((infect[j]==0) && (infection_force*S[j] > runif(1))) # infection probability
+#     {
+#       infect[j]=i #day of infection
+#       if (infection_to_serious_force*SS[j] > runif(1)) # progression to severe probability
+#       {
+#         ser[j]=i #day of becoming severely ill
+#       }
+#     }
+#   }
+# }
+# # sum_infect=sum(infect>0)
+# # sum_ser= sum(ser>0)
+# # ratio_inf_to_ser = sum_infect/sum_ser
+# 
+# #calculate at what month each person was infected; 0 - person is not infected
+# infect_month=(infect+30)%/%31 
+# 
+# a=data.frame(S,infect,infect_month,ser)
+# b = a %>% group_by(infect) %>% summarise(mean=mean(S))
+# 
+# #infect_month=0 in 'c' shows the line for uninfected; if absent -all infected; if '6' is absent - noone infected during month 6
+# c = a %>% group_by(infect_month) %>% summarise(mean_per_Month=mean(S),N=n())
+# 
+# ser_month=(ser+30)%/%30.1
+# a_ss=data.frame(S,ser,ser_month)
+# ##ser_month=0 in 'd' shows the line for those not progressed to severe disease 
+# d = a_ss %>% group_by(ser_month) %>% summarise(SS_per_Month=mean(S),Nser=n())
+# 
+# ###############################################vaccinated##############################
+# #initializing groups S and SS with different protection
+# SV = 0.0*(1:NV)
+# SSV = 0.0*(1:NV)
+# infectV=0*(1:NV)
+# serV=0*(1:NV)
+# 
+# #two groups: 'vulnerable'(group3) and 'immunocompetent'(group 4) in vaccinated
+# 
+# if (VEswaning==0) {
+#   SV[1:group3]=sample_vulnerableV_dif[1:group3] 
+#   SV[(group3+1):NV]=sample_immunocompetentV_dif[1:(NV-group3)]
+# }
+# 
+# if (VEpwaning==0) {
+# # #two lines below are needed only for stable progression to severe disease#
+# # #also need to comment the line SSV=SV below
+#   SSV[1:group3]=sample_vulnerableV[1:group3]
+#   SSV[(group3+1):NV]=sample_immunocompetentV[1:(NV-group3)]  #beta4
+# }
+# 
+# for (i in 1:180)  { # cycle per days
+#   if (VEswaning>0) {
+#   SV[1:group3]=sample_vulnerableV_dif[1:group3] #alpha3
+#   SV[(group3+1):NV]=sample_immunocompetentV_dif[1:(NV-group3)] #alpha4
+#   if(mean(sample_immunocompetentV_dif[1:(NV-group3)])<alpha2){
+#   sample_immunocompetentV_dif[1:(NV-group3)]= sample_immunocompetentV_dif[1:(NV-group3)]+VEs_waining
+#  for (schet in 1:(NV-group3)){
+#     if (sample_immunocompetentV_dif[schet]>1) {sample_immunocompetentV_dif[schet]==1}
+#   }
+#   }
+#   if(mean(sample_vulnerableV_dif[1:group3])<alpha1){
+#   sample_vulnerableV_dif[1:group3]= sample_vulnerableV_dif[1:group3]+VEs_waining_V
+#     for (schet in 1:group3){
+#     if (sample_vulnerableV_dif[schet]>1) {sample_vulnerableV_dif[schet]==1}
+#   }
+#   }
+#   }
+#   if (VEpwaning>0) {
+#   SSV[(group3+1):NV]=sample_immunocompetentV[1:(NV-group3)]  #beta4
+#   SSV[1:group3]=sample_vulnerableV[1:group3]  #beta3
+#   if(mean(sample_immunocompetentV[1:(NV-group3)])<beta2){
+#   sample_immunocompetentV[1:(NV-group3)]= sample_immunocompetentV[1:(NV-group3)]+VEp_waining
+#   for (schet in 1:(NV-group3)){
+#     if (sample_immunocompetentV[schet]>1) {sample_immunocompetentV[schet]==1}
+#   }
+#   }
+#   if(mean(sample_vulnerableV[1:group3])<beta1){
+#   sample_vulnerableV[1:group3]= sample_vulnerableV[1:group3]+VEp_waining_V
+#   for (schet in 1:group3){
+#     if (sample_vulnerableV[schet]>1) {sample_vulnerableV[schet]==1}
+#   }
+#   }
+#   }
+# 
+#   for (j in 1:N) # cycle per people
+#   {
+#     if ((infectV[j]==0) && (infection_forceV*SV[j] > runif(1))) # infection probability
+#     {
+#       infectV[j]=i
+#       if (infection_to_serious_forceV*SSV[j] > runif(1)) # serious probability
+#       {
+#         serV[j]=i
+#       }
+#     }
+#   }
+# }
+# sum_infectV=sum(infectV>0)
+# sum_serV= sum(serV>0)
+# ratio_inf_to_serV = sum(infectV>0)/sum(serV>0)
+# 
+# infect_monthV=(infectV+30)%/%31
+# aV=data.frame(SV,infectV,infect_monthV,serV)
+# bV = aV %>% group_by(infectV) %>% summarise(mean=mean(SV))
+# cV = aV %>% group_by(infect_monthV) %>% summarise(mean_per_MonthV=mean(SV),NV=n())
+#  
+# ser_monthV=(serV+30)%/%30.1
+# a_ssV=data.frame(SV,serV,ser_monthV)
+# dV = a_ssV %>% group_by(ser_monthV) %>% summarise(SS_per_MonthV=mean(SV),NserV=n())
+# 
+# #########generate file to report susceptible left######
+# susceptible=data.frame(S,infect,infect_month,ser,SV,infectV,infect_monthV,serV)
+# write.csv(susceptible, file = paste0("susceptible1_0_3_0_7_uncor_",m,".csv"), row.names = FALSE)
+# ###############################################################################################
+# ######################################BAR PLOTS################################################
+# # adding labels
+# SG = rep('', times=N) # group label
+# SG[1:group1]='1' # 
+# SG[(group1+1):N]='2'
+# 
+# a_per_group=data.frame(SG,S,infect_month)
+# c_per_group = a_per_group %>%
+#   filter(infect_month > 0 ) %>%
+#   group_by(SG,infect_month) %>% 
+#   summarise(mean_per_Month=mean(S),N_inf=n())
+# # plotting
+# barplotU = data.frame(G = c_per_group$SG ,Month = c_per_group$infect_month,N_inf = c_per_group$N_inf)
+# 
+# SVG = rep('', times=N) #group label
+# SVG[1:group3]="3"
+# SVG[(group3+1):NV]="4"
+# 
+# ##############################Bar Plot for Infected##################################
+# av_per_group=data.frame(SVG,SV,infect_monthV)
+# cv_per_group = av_per_group %>%
+#   filter(infect_monthV > 0 ) %>%
+#   group_by(SVG,infect_monthV) %>% 
+#   summarise(mean_per_Month=mean(SV),N_inf=n())
+# barplotV = data.frame(G = cv_per_group$SVG ,Month = cv_per_group$infect_monthV,N_inf= cv_per_group$N_inf)
+# 
+# # all four groups combined for the bar plot
+# barplotALL=rbind(barplotU,barplotV)
+# #ggplot(barplotALL, aes(x = Month, y = N_inf, fill = G, colour = G)) + geom_bar(stat = "identity")
+# #ggsave("barplotALL.eps", width = 6, height = 4.5, device="eps") 
+# write.csv(barplotALL, file = paste0("barplotALL1_0_3_0_7_uncor_",m,".csv"), row.names = FALSE)
+# 
+# ##############################Bar Plot for Severe##################################
+# #################progressed to severe in unvaccinated###################
+# as_per_group=data.frame(SG,S,ser_month)
+# cs_per_group = as_per_group %>%
+#   filter(ser_month > 0 ) %>%
+#   group_by(SG,ser_month) %>% 
+#   summarise(mean_per_Month=mean(S),N_ser=n())
+# barplotSU = data.frame(G = cs_per_group$SG ,Month = cs_per_group$ser_month,N_ser= cs_per_group$N_ser)
+# #####progressed to severe in vaccinated###################
+# avs_per_group=data.frame(SVG,SV,ser_monthV)
+# cvs_per_group = avs_per_group %>%
+#   filter(ser_monthV > 0 ) %>%
+#   group_by(SVG,ser_monthV) %>% 
+#   summarise(mean_per_Month=mean(SV),N_ser=n())
+# barplotSV = data.frame(G = cvs_per_group$SVG ,Month = cvs_per_group$ser_monthV,N_ser= cvs_per_group$N_ser)
+# 
+# barplotALLS=rbind(barplotSU,barplotSV)
+# write.csv(barplotALLS, file = paste0("barplotALLS1_0_3_0_7_uncor_",m,".csv"), row.names = FALSE)
+# ###############################################################################################
+# ##################################calculating VEp###############################
+# VEp=1-(dV$NserV/cV$NV)[2:7]/(d$Nser/c$N)[2:7] 
+#    return(VEp)
+#    })
+# }
+# set.seed(123) #setting seed keeps ALL 100 simulations the same if you repeat it
+# simul_number=100
+# VEpbasic <- matrix(NA,nrow=simul_number,ncol=6)
+# for (m in 1:simul_number) {
+# VEpbasic[m,] <- VEmodelwithbarplots(0.07,0.07,1,1,1,0.03,1,0.5,1,0.03,730,0,m)
+# }
+# write.csv(VEpbasic, file = "VEpbasic_waning730f007_1_0_3_0_7_uncor.csv", row.names = FALSE)
+
+```
+
+```{r figure6DEFplots, echo=FALSE, warning=FALSE, message=FALSE, fig.align='center'}
+
+###########################  Figure 6 Panels D, E, and F  #################################
+#Finding the closest to the average curve and it's number
+
+########Plotting all 100 simulation and the one that is closest to average####################
+
+Plotting100<-function(filename){ 
+  with(as.list(c(filename)),{
+    
+# Read the CSV file
+file = paste0(filename, ".csv")
+data <- read.csv(file)
+  
+strings <- data
+# Calculate the overall average values 
+overall_averaged_values <- apply(strings, 2, mean) 
+
+# Function to find the string with the closest values to the overall averaged values 
+find_closest_string <- function(strings, overall_averaged_values) { 
+  # Calculate the distances between each string and the overall averaged values 
+  distances <- apply(strings, 1, function(x) sqrt(sum((x - overall_averaged_values)^2))) 
+  # Find the index of the string with the minimum distance 
+  closest_string_index <- which.min(distances) 
+  return(list(string = strings[closest_string_index, ], index = closest_string_index)) 
+  } 
+# Find the closest string to the overall averaged values 
+closest_string <- find_closest_string(strings, overall_averaged_values) 
+
+pdf(file = paste0(filename, ".pdf"), width = 6.7, height = 5.5, family = "Helvetica", pointsize = 12, onefile = TRUE)
+# Plot all strings 
+matplot(1:6, t(strings), type = "l", col = "grey", lty = 1, xlab = "Study Month", ylab = "VEp",ylim=c(0,0.8)) 
+# Plot the chosen closest string as a thick line 
+lines(1:6, closest_string$string, type = "l", lwd = 2) 
+#legend("topleft", legend = paste("Closest to Average (VEp#", closest_string$index,")", sep = " "), col = "black", lwd = 2)
+dev.off()
+     return(closest_string$index)
+   })
+ }
+
+################finding the closest to averaged VE values for each condition ############ 
+allfilenames <- c("VEpbasic_waning730f007_0_05_0_95", "VEpbasic_waning730f007_heter0_1_0_9","VEpbasic_waning730f007_1_0_3_0_7_uncor")
+
+for (k in 1:length(allfilenames)) {
+index=Plotting100(allfilenames[k])
+file = paste0(allfilenames[k], ".csv")
+data=read.csv(file)
+
+# Extract the specific row and convert it to a numeric vector
+# Create the variable with the name in the name vector
+#the result is a varibale with the name allfilenames[i] that has the simulation values closest to the 100 simulation average
+assign(allfilenames[k], as.numeric(data[index,]), envir = .GlobalEnv)
+}
+
+print("Figure 6D")
+knitr::include_graphics("VEpbasic_waning730f007_0_05_0_95.pdf")
+print("Figure 6E")
+knitr::include_graphics("VEpbasic_waning730f007_heter0_1_0_9.pdf")
+print("Figure 6F")
+knitr::include_graphics("VEpbasic_waning730f007_1_0_3_0_7_uncor.pdf")
+```
+
+\newpage
+
+**Figure 7. Effect of high vaccine–induced protection in immunocompetent group and low vaccine–induced protection in vulnerable group on observed VEp.** 
+
+Figure 7 Panels A-C plot the results of sampling individual parameters describing vaccine-induced protection in vulnerable (Group 3) and immunocompetent (Group 4) individuals from corresponding Beta distributions.
+
+```{r figure7_beta_distributions, echo=FALSE, warning=FALSE, message=FALSE}
+rm(list=ls()) 
+
+plot_beta_distributions <- function(alpha_immunocompetent, beta_immunocompetent, alpha_vulnerable, beta_vulnerable,
+   output_file = "betadistributions.pdf", #save it as default 
+   output_file2 = "betadistributions2.pdf", #save it as default 
+   vulnerable_color = rgb(0.502, 0, 0.502, 0.8), #rgb(1, 0.65, 0, 0.5), 
+   immunocompetent_color = rgb(0, 0.62, 0.451, 0.8)) {   #rgb(0, 0, 1, 0.5)) {
+  
+  set.seed(123) ## Set seed for reproducibility
+  # Generate samples for both groups
+  sample_vulnerable <- rbeta(1000, alpha_vulnerable, beta_vulnerable)
+  sample_immunocompetent <- rbeta(1000, alpha_immunocompetent, beta_immunocompetent)
+  
+  # Open PDF to save the plot
+  pdf(file = output_file, width = 6.7, height = 5.5, family = "Helvetica", pointsize = 12)
+  
+  # Adjust plot settings
+  par(mgp = c(2.4, 1, 0)) 
+  breaks <- seq(0, 1, length.out = 31)  # Define common breaks
+  
+  # Plot histograms with common breaks
+  hist(sample_vulnerable, breaks = breaks, col = vulnerable_color, 
+       xlab = "Coefficient", xlim = c(0, 1), ylim = c(0, 800), 
+       cex.axis = 1.6, cex.lab = 1.6, main = "")
+  hist(sample_immunocompetent, breaks = breaks, col = immunocompetent_color, 
+       add = TRUE)
+  legend("top", legend = c("Vulnerable", "Immunocompetent"), fill = c(vulnerable_color, immunocompetent_color), cex = 1.5, bty = "n")  
+
+  dev.off() ## Close the PDF device
+
+}
+
+############################################ Figure 7 Panel A ###########################################
+# Parameters for the two Beta distributions (almost non-overlapping)
+#These parameters ensure the variance is approximately 0.01, with the means centered at 0.05 and 0.95, for immunocompetent and vulnerable, respectively.
+plot_beta_distributions(0.1875, 3.5625, 3.5625, 0.1875,"Figure7A.pdf")
+
+################################## Figure 7 Panel B #########################################
+#These parameters ensure the variance is approximately 0.01, with the means centered at 0.05 and 0.7, for immunocompetent and vulnerable, respectively.
+plot_beta_distributions(0.1875, 3.5625, 14, 6,"Figure7B.pdf")
+
+################################## Figure 7 Panel C ########################################
+#means 0.3 and 0.95 and variance 0.01
+plot_beta_distributions(6, 14, 3.5625, 0.1875,"Figure7C.pdf")
+
+knitr::include_graphics("Figure7A.pdf")
+knitr::include_graphics("Figure7B.pdf")
+knitr::include_graphics("Figure7C.pdf")
+```
+
+Figure 7D is the same as Figure 6D. Next two chucks generate the data for Figure 7E and Figure 7F, following by the chunk that plots the results.  
+The files "VEpbasic_waning730f007uncor0_05_0_7.csv" (Panel E) and "VEpbasic_waning730f007_1_0_3_0_95_uncor.csv" (Panel F) are provided for further analysis.
+
+```{r figure7panelE, echo=FALSE, warning=FALSE, message=FALSE, fig.align='center'}
+
+########Uncorrelated  means 0.7 (vulnerable) and 0.05 (immunocompetent) and a variance of 0.01###
+
+rm(list=ls()) 
+library(readr)   # Read tabular data.
+library(tidyr)   # Data frame tidying functions.
+library(dplyr)   # General data frame manipulation.
+library(ggplot2) # Flexible plotting.
+
+# VEmodelwithbarplots<-function(frac1,frac2,alpha1,alpha2,alpha3,alpha4,beta1,beta2,beta3,beta4,VEswaning,VEpwaning,m){ #m is the number of simulations
+#   with(as.list(c(frac1,frac2,alpha1,alpha2,alpha3,alpha4,beta1,beta2,beta3,beta4,VEswaning,VEpwaning,m)),{ # m is the number of the simulation
+# # population
+# N =200000 #number of unvaccinated people      
+# NV=200000 #number of vaccinated people 
+# 
+# adjust_alpha=1
+# adjust_beta=1 #1/0.8 where 0.8 is a mean value for vulnerable group
+# 
+# #Unvaccinated
+# infection_force = 1/180.*adjust_alpha   #4./180. # 30% attack rate over 180 days; to be adjusted
+# infection_to_serious_force = 1/10*adjust_beta # base chance to get severe disease if infected
+# #Vaccinated
+# infection_forceV = 1/180.*adjust_alpha #4./180
+# infection_to_serious_forceV = 1/10.*adjust_beta # base chance to get severe disease if infected while being vaccinated
+# 
+# group1=ceiling(N*frac1)-1 #correction
+# group3=ceiling(NV*frac2)-1 #correction
+# 
+# sample_vulnerableV <- NULL
+# sample_immunocompetentV <- NULL
+# 
+# ######################################## Panel E ##################################
+# ##### Beta ditribution means are 0.7 (vulnerable) and 0.05 (immunocompetent) and a variance of 0.01#####
+# alpha_vulnerable <- 14
+# beta_vulnerable <- 6
+# 
+# alpha_immunocompetent <- 0.1875
+# beta_immunocompetent <- 3.5625
+
+# # Sample coefficients for both groups for parameter 'beta' in the model
+# sample_vulnerableV[1:group3] <- rbeta(group3, alpha_vulnerable, beta_vulnerable)
+# sample_immunocompetentV[1:(NV-group3)] <- rbeta((NV-group3), alpha_immunocompetent, beta_immunocompetent)
+# 
+# #if uncorrelated this is for alpha
+# sample_vulnerableV_dif <- NULL
+# sample_immunocompetentV_dif <- NULL
+# 
+# #case when individual VEs and VEp areuncorrelated
+# sample_vulnerableV_dif[1:group3] <- rbeta(group3, alpha_vulnerable, beta_vulnerable)
+# sample_immunocompetentV_dif[1:(NV-group3)] <- rbeta((NV-group3), alpha_immunocompetent, beta_immunocompetent)
+# 
+# # #case when individual VEs and VEp are correlated as in Supplemental Figure 2
+# # sample_vulnerableV_dif[1:group3]=sample_vulnerableV[1:group3]
+# # sample_immunocompetentV_dif[1:(NV-group3)]=sample_immunocompetentV[1:(NV-group3)]
+# 
+# alpha3v=mean(sample_vulnerableV_dif)
+# alpha4v=mean(sample_immunocompetentV_dif)
+# print(alpha3v)
+# print(alpha4v)
+# beta3v=mean(sample_vulnerableV)
+# beta4v=mean(sample_immunocompetentV)
+# print(beta3v)
+# print(beta4v)
+# 
+# if (VEswaning>0) {
+# VEs_waining= (alpha2-alpha4v)/VEswaning #(alpha2-alpha4)/180.
+# VEs_waining_V= (alpha1-alpha3v)/VEswaning #for vulnerable group
+# }
+# if (VEpwaning>0) {
+# VEp_waining= (beta2-beta4v)/VEpwaning 
+# VEp_waining_V= (beta1-beta3v)/VEpwaning 
+# }
+# 
+# ###########################block for unvaccinated##################################
+# #initializing groups S and SS with different protection
+# S = 0.0*(1:N)
+# SS = 0.0*(1:N)
+# infect=0*(1:N)
+# ser=0*(1:N) #severe cases
+# 
+# #two groups: 'vulnerable'(group1) and 'immunocompetent'
+# S[1:group1]=alpha1 # protection against infection in unvaccinated: 1 means base, <1 means more protected
+# S[(group1+1):N]=alpha2
+# SS[1:group1]=beta1 # protection against severe disease: 1 means base, <1 means more protected
+# SS[(group1+1):N]=beta2 
+# 
+# for (i in 1:180) #i corresponds to the day, j corresponds to the individal/person
+# { # cycle per days
+#   for (j in 1:N) # cycle per people
+#   {
+#     if ((infect[j]==0) && (infection_force*S[j] > runif(1))) # infection probability
+#     {
+#       infect[j]=i #day of infection
+#       if (infection_to_serious_force*SS[j] > runif(1)) # progression to severe probability
+#       {
+#         ser[j]=i #day of becoming severely ill
+#       }
+#     }
+#   }
+# }
+# # sum_infect=sum(infect>0)
+# # sum_ser= sum(ser>0)
+# # ratio_inf_to_ser = sum_infect/sum_ser
+# 
+# #calculate at what month each person was infected; 0 - person is not infected
+# infect_month=(infect+30)%/%31 
+# 
+# a=data.frame(S,infect,infect_month,ser)
+# b = a %>% group_by(infect) %>% summarise(mean=mean(S))
+# 
+# #infect_month=0 in 'c' shows the line for uninfected; if absent -all infected; if '6' is absent - noone infected during month 6
+# c = a %>% group_by(infect_month) %>% summarise(mean_per_Month=mean(S),N=n())
+# 
+# ser_month=(ser+30)%/%30.1
+# a_ss=data.frame(S,ser,ser_month)
+# ##ser_month=0 in 'd' shows the line for those not progressed to severe disease 
+# d = a_ss %>% group_by(ser_month) %>% summarise(SS_per_Month=mean(S),Nser=n())
+# 
+# ###############################################vaccinated##############################
+# #initializing groups S and SS with different protection
+# SV = 0.0*(1:NV)
+# SSV = 0.0*(1:NV)
+# infectV=0*(1:NV)
+# serV=0*(1:NV)
+# 
+# #two groups: 'vulnerable'(group3) and 'immunocompetent'(group 4) in vaccinated
+# 
+# if (VEswaning==0) {
+#   SV[1:group3]=sample_vulnerableV_dif[1:group3] 
+#   SV[(group3+1):NV]=sample_immunocompetentV_dif[1:(NV-group3)]
+# }
+# 
+# if (VEpwaning==0) {
+# # #two lines below are needed only for stable progression to severe disease#
+# # #also need to comment the line SSV=SV below
+#   SSV[1:group3]=sample_vulnerableV[1:group3]
+#   SSV[(group3+1):NV]=sample_immunocompetentV[1:(NV-group3)]  #beta4
+# }
+# 
+# for (i in 1:180)  { # cycle per days
+#   if (VEswaning>0) {
+#   SV[1:group3]=sample_vulnerableV_dif[1:group3] #alpha3
+#   SV[(group3+1):NV]=sample_immunocompetentV_dif[1:(NV-group3)] #alpha4
+#   if(mean(sample_immunocompetentV_dif[1:(NV-group3)])<alpha2){
+#   sample_immunocompetentV_dif[1:(NV-group3)]= sample_immunocompetentV_dif[1:(NV-group3)]+VEs_waining
+#  for (schet in 1:(NV-group3)){
+#     if (sample_immunocompetentV_dif[schet]>1) {sample_immunocompetentV_dif[schet]==1}
+#   }
+#   }
+#   if(mean(sample_vulnerableV_dif[1:group3])<alpha1){
+#   sample_vulnerableV_dif[1:group3]= sample_vulnerableV_dif[1:group3]+VEs_waining_V
+#     for (schet in 1:group3){
+#     if (sample_vulnerableV_dif[schet]>1) {sample_vulnerableV_dif[schet]==1}
+#   }
+#   }
+#   }
+#   if (VEpwaning>0) {
+#   SSV[(group3+1):NV]=sample_immunocompetentV[1:(NV-group3)]  #beta4
+#   SSV[1:group3]=sample_vulnerableV[1:group3]  #beta3
+#   if(mean(sample_immunocompetentV[1:(NV-group3)])<beta2){
+#   sample_immunocompetentV[1:(NV-group3)]= sample_immunocompetentV[1:(NV-group3)]+VEp_waining
+#   for (schet in 1:(NV-group3)){
+#     if (sample_immunocompetentV[schet]>1) {sample_immunocompetentV[schet]==1}
+#   }
+#   }
+#   if(mean(sample_vulnerableV[1:group3])<beta1){
+#   sample_vulnerableV[1:group3]= sample_vulnerableV[1:group3]+VEp_waining_V
+#   for (schet in 1:group3){
+#     if (sample_vulnerableV[schet]>1) {sample_vulnerableV[schet]==1}
+#   }
+#   }
+#   }
+# 
+#   for (j in 1:N) # cycle per people
+#   {
+#     if ((infectV[j]==0) && (infection_forceV*SV[j] > runif(1))) # infection probability
+#     {
+#       infectV[j]=i
+#       if (infection_to_serious_forceV*SSV[j] > runif(1)) # serious probability
+#       {
+#         serV[j]=i
+#       }
+#     }
+#   }
+# }
+# sum_infectV=sum(infectV>0)
+# sum_serV= sum(serV>0)
+# ratio_inf_to_serV = sum(infectV>0)/sum(serV>0)
+# 
+# infect_monthV=(infectV+30)%/%31
+# aV=data.frame(SV,infectV,infect_monthV,serV)
+# bV = aV %>% group_by(infectV) %>% summarise(mean=mean(SV))
+# cV = aV %>% group_by(infect_monthV) %>% summarise(mean_per_MonthV=mean(SV),NV=n())
+#  
+# ser_monthV=(serV+30)%/%30.1
+# a_ssV=data.frame(SV,serV,ser_monthV)
+# dV = a_ssV %>% group_by(ser_monthV) %>% summarise(SS_per_MonthV=mean(SV),NserV=n())
+# 
+# #########generate file to report susceptible left######
+# susceptible=data.frame(S,infect,infect_month,ser,SV,infectV,infect_monthV,serV)
+# write.csv(susceptible, file = paste0("susceptible1_uncor0_05_0_7_",m,".csv"), row.names = FALSE)
+# ###############################################################################################
+# ######################################BAR PLOTS################################################
+# # adding labels
+# SG = rep('', times=N) # group label
+# SG[1:group1]='1' # 
+# SG[(group1+1):N]='2'
+# 
+# a_per_group=data.frame(SG,S,infect_month)
+# c_per_group = a_per_group %>%
+#   filter(infect_month > 0 ) %>%
+#   group_by(SG,infect_month) %>% 
+#   summarise(mean_per_Month=mean(S),N_inf=n())
+# # plotting
+# barplotU = data.frame(G = c_per_group$SG ,Month = c_per_group$infect_month,N_inf = c_per_group$N_inf)
+# 
+# SVG = rep('', times=N) #group label
+# SVG[1:group3]="3"
+# SVG[(group3+1):NV]="4"
+# 
+# ##############################Bar Plot for Infected##################################
+# av_per_group=data.frame(SVG,SV,infect_monthV)
+# cv_per_group = av_per_group %>%
+#   filter(infect_monthV > 0 ) %>%
+#   group_by(SVG,infect_monthV) %>% 
+#   summarise(mean_per_Month=mean(SV),N_inf=n())
+# barplotV = data.frame(G = cv_per_group$SVG ,Month = cv_per_group$infect_monthV,N_inf= cv_per_group$N_inf)
+# 
+# # all four groups combined for the bar plot
+# barplotALL=rbind(barplotU,barplotV)
+# #ggplot(barplotALL, aes(x = Month, y = N_inf, fill = G, colour = G)) + geom_bar(stat = "identity")
+# #ggsave("barplotALL.eps", width = 6, height = 4.5, device="eps") 
+# write.csv(barplotALL, file = paste0("barplotALLuncor0_05_0_7_",m,".csv"), row.names = FALSE)
+# 
+# ##############################Bar Plot for Severe##################################
+# #################progressed to severe in unvaccinated###################
+# as_per_group=data.frame(SG,S,ser_month)
+# cs_per_group = as_per_group %>%
+#   filter(ser_month > 0 ) %>%
+#   group_by(SG,ser_month) %>% 
+#   summarise(mean_per_Month=mean(S),N_ser=n())
+# barplotSU = data.frame(G = cs_per_group$SG ,Month = cs_per_group$ser_month,N_ser= cs_per_group$N_ser)
+# #####progressed to severe in vaccinated###################
+# avs_per_group=data.frame(SVG,SV,ser_monthV)
+# cvs_per_group = avs_per_group %>%
+#   filter(ser_monthV > 0 ) %>%
+#   group_by(SVG,ser_monthV) %>% 
+#   summarise(mean_per_Month=mean(SV),N_ser=n())
+# barplotSV = data.frame(G = cvs_per_group$SVG ,Month = cvs_per_group$ser_monthV,N_ser= cvs_per_group$N_ser)
+# 
+# barplotALLS=rbind(barplotSU,barplotSV)
+# write.csv(barplotALLS, file = paste0("barplotALLSuncor0_05_0_7_",m,".csv"), row.names = FALSE)
+# ###############################################################################################
+# ##################################calculating VEp###############################
+# VEp=1-(dV$NserV/cV$NV)[2:7]/(d$Nser/c$N)[2:7] 
+#    return(VEp)
+#    })
+# }
+# 
+# set.seed(123) #setting seed keeps ALL 100 simulations the same if you repeat it
+# simul_number=100
+# VEpbasic <- matrix(NA,nrow=simul_number,ncol=6)
+# for (m in 1:simul_number) {
+# VEpbasic[m,] <- VEmodelwithbarplots(0.07,0.07,1,1,1,0.03,1,0.5,1,0.03,730,0,m)
+# }
+# write.csv(VEpbasic, file = "VEpbasic_waning730f007uncor0_05_0_7.csv", row.names = FALSE)
+
+############Uncomment the lines above to generate VEpbasic_waning730f007uncor0_05_0_7.csv ######
+```
+
+
+```{r figure7F, echo=FALSE, warning=FALSE, message=FALSE, fig.align='center'}
+
+# rm(list=ls()) 
+# library(readr)   # Read tabular data.
+# library(tidyr)   # Data frame tidying functions.
+# library(dplyr)   # General data frame manipulation.
+# library(ggplot2) # Flexible plotting.
+# 
+# VEmodelwithbarplots<-function(frac1,frac2,alpha1,alpha2,alpha3,alpha4,beta1,beta2,beta3,beta4,VEswaning,VEpwaning,m){ #m is the number of simulations
+#   with(as.list(c(frac1,frac2,alpha1,alpha2,alpha3,alpha4,beta1,beta2,beta3,beta4,VEswaning,VEpwaning,m)),{ # m is the number of the simulation
+# # population
+# N =200000 #number of unvaccinated people      
+# NV=200000 #number of vaccinated people 
+# 
+# adjust_alpha=1
+# adjust_beta=1 #1/0.8 where 0.8 is a mean value for vulnerable group
+# 
+# #Unvaccinated
+# infection_force = 1/180.*adjust_alpha   #4./180. # 30% attack rate over 180 days; to be adjusted
+# infection_to_serious_force = 1/10*adjust_beta # base chance to get severe disease if infected
+# #Vaccinated
+# infection_forceV = 1/180.*adjust_alpha #4./180
+# infection_to_serious_forceV = 1/10.*adjust_beta # base chance to get severe disease if infected while being vaccinated
+# 
+# group1=ceiling(N*frac1)-1 #correction
+# group3=ceiling(NV*frac2)-1 #correction
+# 
+# ####Setting the risk of progression to severe disease######
+# # These parameters ensure the variance is approximately 0.01, with the means centered at 0.3 and 0.95, for immunocompetent and vulnerable, respectively.
+# alpha_vulnerable <- 3.5625
+# beta_vulnerable <- 0.1875
+# 
+# alpha_immunocompetent <- 6
+# beta_immunocompetent <- 14
+# 
+# sample_vulnerableV <- NULL
+# sample_immunocompetentV <- NULL
+# 
+# # Sample coefficients for both groups for parameter 'beta' in the model
+# sample_vulnerableV[1:group3] <- rbeta(group3, alpha_vulnerable, beta_vulnerable)
+# sample_immunocompetentV[1:(NV-group3)] <- rbeta((NV-group3), alpha_immunocompetent, beta_immunocompetent)
+# 
+# sample_vulnerableV_dif <- NULL
+# sample_immunocompetentV_dif <- NULL
+# 
+# #if uncorrelated this is for alpha
+# sample_vulnerableV_dif[1:group3] <- rbeta(group3, alpha_vulnerable, beta_vulnerable)
+# sample_immunocompetentV_dif[1:(NV-group3)] <- rbeta((NV-group3), alpha_immunocompetent, beta_immunocompetent)
+# 
+# # #case when correlated
+# # sample_vulnerableV_dif[1:group3]=sample_vulnerableV[1:group3]
+# # sample_immunocompetentV_dif[1:(NV-group3)]=sample_immunocompetentV[1:(NV-group3)]
+# 
+# alpha3v=mean(sample_vulnerableV_dif)
+# alpha4v=mean(sample_immunocompetentV_dif)
+# print(alpha3v)
+# print(alpha4v)
+# beta3v=mean(sample_vulnerableV)
+# beta4v=mean(sample_immunocompetentV)
+# print(beta3v)
+# print(beta4v)
+# 
+# if (VEswaning>0) {
+# VEs_waining= (alpha2-alpha4v)/VEswaning #(alpha2-alpha4)/180.
+# VEs_waining_V= (alpha1-alpha3v)/VEswaning #for vulnerable group
+# }
+# if (VEpwaning>0) {
+# VEp_waining= (beta2-beta4v)/VEpwaning 
+# VEp_waining_V= (beta1-beta3v)/VEpwaning 
+# }
+# 
+# ###########################block for unvaccinated##################################
+# #initializing groups S and SS with different protection
+# S = 0.0*(1:N)
+# SS = 0.0*(1:N)
+# infect=0*(1:N)
+# ser=0*(1:N) #severe cases
+# 
+# #two groups: 'vulnerable'(group1) and 'immunocompetent'
+# S[1:group1]=alpha1 # protection against infection in unvaccinated: 1 means base, <1 means more protected
+# S[(group1+1):N]=alpha2
+# SS[1:group1]=beta1 # protection against severe disease: 1 means base, <1 means more protected
+# SS[(group1+1):N]=beta2 
+# 
+# for (i in 1:180) #i corresponds to the day, j corresponds to the individal/person
+# { # cycle per days
+#   for (j in 1:N) # cycle per people
+#   {
+#     if ((infect[j]==0) && (infection_force*S[j] > runif(1))) # infection probability
+#     {
+#       infect[j]=i #day of infection
+#       if (infection_to_serious_force*SS[j] > runif(1)) # progression to severe probability
+#       {
+#         ser[j]=i #day of becoming severely ill
+#       }
+#     }
+#   }
+# }
+# # sum_infect=sum(infect>0)
+# # sum_ser= sum(ser>0)
+# # ratio_inf_to_ser = sum_infect/sum_ser
+# 
+# #calculate at what month each person was infected; 0 - person is not infected
+# infect_month=(infect+30)%/%31 
+# 
+# a=data.frame(S,infect,infect_month,ser)
+# b = a %>% group_by(infect) %>% summarise(mean=mean(S))
+# 
+# #infect_month=0 in 'c' shows the line for uninfected; if absent -all infected; if '6' is absent - noone infected during month 6
+# c = a %>% group_by(infect_month) %>% summarise(mean_per_Month=mean(S),N=n())
+# 
+# ser_month=(ser+30)%/%30.1
+# a_ss=data.frame(S,ser,ser_month)
+# ##ser_month=0 in 'd' shows the line for those not progressed to severe disease 
+# d = a_ss %>% group_by(ser_month) %>% summarise(SS_per_Month=mean(S),Nser=n())
+# 
+# ###############################################vaccinated##############################
+# #initializing groups S and SS with different protection
+# SV = 0.0*(1:NV)
+# SSV = 0.0*(1:NV)
+# infectV=0*(1:NV)
+# serV=0*(1:NV)
+# 
+# #two groups: 'vulnerable'(group3) and 'immunocompetent'(group 4) in vaccinated
+# 
+# if (VEswaning==0) {
+#   SV[1:group3]=sample_vulnerableV_dif[1:group3] 
+#   SV[(group3+1):NV]=sample_immunocompetentV_dif[1:(NV-group3)]
+# }
+# 
+# if (VEpwaning==0) {
+# # #two lines below are needed only for stable progression to severe disease#
+# # #also need to comment the line SSV=SV below
+#   SSV[1:group3]=sample_vulnerableV[1:group3]
+#   SSV[(group3+1):NV]=sample_immunocompetentV[1:(NV-group3)]  #beta4
+# }
+# 
+# for (i in 1:180)  { # cycle per days
+#   if (VEswaning>0) {
+#   SV[1:group3]=sample_vulnerableV_dif[1:group3] #alpha3
+#   SV[(group3+1):NV]=sample_immunocompetentV_dif[1:(NV-group3)] #alpha4
+#   if(mean(sample_immunocompetentV_dif[1:(NV-group3)])<alpha2){
+#   sample_immunocompetentV_dif[1:(NV-group3)]= sample_immunocompetentV_dif[1:(NV-group3)]+VEs_waining
+#  for (schet in 1:(NV-group3)){
+#     if (sample_immunocompetentV_dif[schet]>1) {sample_immunocompetentV_dif[schet]==1}
+#   }
+#   }
+#   if(mean(sample_vulnerableV_dif[1:group3])<alpha1){
+#   sample_vulnerableV_dif[1:group3]= sample_vulnerableV_dif[1:group3]+VEs_waining_V
+#     for (schet in 1:group3){
+#     if (sample_vulnerableV_dif[schet]>1) {sample_vulnerableV_dif[schet]==1}
+#   }
+#   }
+#   }
+#   if (VEpwaning>0) {
+#   SSV[(group3+1):NV]=sample_immunocompetentV[1:(NV-group3)]  #beta4
+#   SSV[1:group3]=sample_vulnerableV[1:group3]  #beta3
+#   if(mean(sample_immunocompetentV[1:(NV-group3)])<beta2){
+#   sample_immunocompetentV[1:(NV-group3)]= sample_immunocompetentV[1:(NV-group3)]+VEp_waining
+#   for (schet in 1:(NV-group3)){
+#     if (sample_immunocompetentV[schet]>1) {sample_immunocompetentV[schet]==1}
+#   }
+#   }
+#   if(mean(sample_vulnerableV[1:group3])<beta1){
+#   sample_vulnerableV[1:group3]= sample_vulnerableV[1:group3]+VEp_waining_V
+#   for (schet in 1:group3){
+#     if (sample_vulnerableV[schet]>1) {sample_vulnerableV[schet]==1}
+#   }
+#   }
+#   }
+# 
+#   for (j in 1:N) # cycle per people
+#   {
+#     if ((infectV[j]==0) && (infection_forceV*SV[j] > runif(1))) # infection probability
+#     {
+#       infectV[j]=i
+#       if (infection_to_serious_forceV*SSV[j] > runif(1)) # serious probability
+#       {
+#         serV[j]=i
+#       }
+#     }
+#   }
+# }
+# sum_infectV=sum(infectV>0)
+# sum_serV= sum(serV>0)
+# ratio_inf_to_serV = sum(infectV>0)/sum(serV>0)
+# 
+# infect_monthV=(infectV+30)%/%31
+# aV=data.frame(SV,infectV,infect_monthV,serV)
+# bV = aV %>% group_by(infectV) %>% summarise(mean=mean(SV))
+# cV = aV %>% group_by(infect_monthV) %>% summarise(mean_per_MonthV=mean(SV),NV=n())
+#  
+# ser_monthV=(serV+30)%/%30.1
+# a_ssV=data.frame(SV,serV,ser_monthV)
+# dV = a_ssV %>% group_by(ser_monthV) %>% summarise(SS_per_MonthV=mean(SV),NserV=n())
+# 
+# #########generate file to report susceptible left######
+# susceptible=data.frame(S,infect,infect_month,ser,SV,infectV,infect_monthV,serV)
+# write.csv(susceptible, file = paste0("susceptible1_0_3_0_95_uncor_",m,".csv"), row.names = FALSE)
+# ###############################################################################################
+# ######################################BAR PLOTS################################################
+# # adding labels
+# SG = rep('', times=N) # group label
+# SG[1:group1]='1' # 
+# SG[(group1+1):N]='2'
+# 
+# a_per_group=data.frame(SG,S,infect_month)
+# c_per_group = a_per_group %>%
+#   filter(infect_month > 0 ) %>%
+#   group_by(SG,infect_month) %>% 
+#   summarise(mean_per_Month=mean(S),N_inf=n())
+# # plotting
+# barplotU = data.frame(G = c_per_group$SG ,Month = c_per_group$infect_month,N_inf = c_per_group$N_inf)
+# 
+# SVG = rep('', times=N) #group label
+# SVG[1:group3]="3"
+# SVG[(group3+1):NV]="4"
+# 
+# ##############################Bar Plot for Infected##################################
+# av_per_group=data.frame(SVG,SV,infect_monthV)
+# cv_per_group = av_per_group %>%
+#   filter(infect_monthV > 0 ) %>%
+#   group_by(SVG,infect_monthV) %>% 
+#   summarise(mean_per_Month=mean(SV),N_inf=n())
+# barplotV = data.frame(G = cv_per_group$SVG ,Month = cv_per_group$infect_monthV,N_inf= cv_per_group$N_inf)
+# 
+# # all four groups combined for the bar plot
+# barplotALL=rbind(barplotU,barplotV)
+# #ggplot(barplotALL, aes(x = Month, y = N_inf, fill = G, colour = G)) + geom_bar(stat = "identity")
+# #ggsave("barplotALL.eps", width = 6, height = 4.5, device="eps") 
+# write.csv(barplotALL, file = paste0("barplotALL1_0_3_0_95_uncor_",m,".csv"), row.names = FALSE)
+# 
+# ##############################Bar Plot for Severe##################################
+# #################progressed to severe in unvaccinated###################
+# as_per_group=data.frame(SG,S,ser_month)
+# cs_per_group = as_per_group %>%
+#   filter(ser_month > 0 ) %>%
+#   group_by(SG,ser_month) %>% 
+#   summarise(mean_per_Month=mean(S),N_ser=n())
+# barplotSU = data.frame(G = cs_per_group$SG ,Month = cs_per_group$ser_month,N_ser= cs_per_group$N_ser)
+# #####progressed to severe in vaccinated###################
+# avs_per_group=data.frame(SVG,SV,ser_monthV)
+# cvs_per_group = avs_per_group %>%
+#   filter(ser_monthV > 0 ) %>%
+#   group_by(SVG,ser_monthV) %>% 
+#   summarise(mean_per_Month=mean(SV),N_ser=n())
+# barplotSV = data.frame(G = cvs_per_group$SVG ,Month = cvs_per_group$ser_monthV,N_ser= cvs_per_group$N_ser)
+# 
+# barplotALLS=rbind(barplotSU,barplotSV)
+# write.csv(barplotALLS, file = paste0("barplotALLS1_0_3_0_95_uncor_",m,".csv"), row.names = FALSE)
+# ###############################################################################################
+# ##################################calculating VEp###############################
+# VEp=1-(dV$NserV/cV$NV)[2:7]/(d$Nser/c$N)[2:7] 
+#    return(VEp)
+#    })
+# }
+# 
+# set.seed(123) #setting seed keeps ALL 100 simulations the same if you repeat it
+# simul_number=100
+# VEpbasic <- matrix(NA,nrow=simul_number,ncol=6)
+# for (m in 1:simul_number) {
+# VEpbasic[m,] <- VEmodelwithbarplots(0.07,0.07,1,1,1,0.03,1,0.5,1,0.03,730,0,m)
+# }
+# write.csv(VEpbasic, file = "VEpbasic_waning730f007_1_0_3_0_95_uncor.csv", row.names = FALSE)
+# dropbox_path <- "~/Dropbox/"
+# write.csv(VEpbasic, 
+#           file = paste0(dropbox_path, "VEpbasic_waning730f007_1_0_3_0_95_uncor.csv"), 
+#           row.names = FALSE)
+```
+
+```{r figure7EFplots, echo=FALSE, warning=FALSE, message=FALSE, fig.align='center'}
+
+###########################  Figure 7 Panels E and F plots   #######################################
+#Finding the closest to the average curve and it's number
+
+########Plotting all 100 simulation and the one that is closest to average####################
+
+Plotting100<-function(filename){ 
+  with(as.list(c(filename)),{
+    
+# Read the CSV file
+file = paste0(filename, ".csv")
+data <- read.csv(file)
+  
+strings <- data
+# Calculate the overall average values 
+overall_averaged_values <- apply(strings, 2, mean) 
+
+# Function to find the string with the closest values to the overall averaged values 
+find_closest_string <- function(strings, overall_averaged_values) { 
+  # Calculate the distances between each string and the overall averaged values 
+  distances <- apply(strings, 1, function(x) sqrt(sum((x - overall_averaged_values)^2))) 
+  # Find the index of the string with the minimum distance 
+  closest_string_index <- which.min(distances) 
+  return(list(string = strings[closest_string_index, ], index = closest_string_index)) 
+  } 
+# Find the closest string to the overall averaged values 
+closest_string <- find_closest_string(strings, overall_averaged_values) 
+
+pdf(file = paste0(filename, ".pdf"), width = 6.7, height = 5.5, family = "Helvetica", pointsize = 12, onefile = TRUE)
+# Plot all strings 
+matplot(1:6, t(strings), type = "l", col = "grey", lty = 1, xlab = "Study Month", ylab = "VEp", ylim=c(0,0.8)) 
+# Plot the chosen closest string as a thick line 
+lines(1:6, closest_string$string, type = "l", lwd = 2) 
+#legend("topleft", legend = paste("Closest to Average (VEp#", closest_string$index,")", sep = " "), col = "black", lwd = 2)
+dev.off()
+     return(closest_string$index)
+   })
+ }
+
+################finding the closest to averaged VE values for each condition ############ 
+allfilenames <- c("VEpbasic_waning730f007uncor0_05_0_7", "VEpbasic_waning730f007_1_0_3_0_95_uncor")
+
+for (k in 1:length(allfilenames)) {
+index=Plotting100(allfilenames[k])
+file = paste0(allfilenames[k], ".csv")
+data=read.csv(file)
+
+# Extract the specific row and convert it to a numeric vector
+# Create the variable with the name in the name vector
+#the result is a varibale with the name allfilenames[i] that has the simulation values closest to the 100 simulation average
+assign(allfilenames[k], as.numeric(data[index,]), envir = .GlobalEnv)
+}
+print("Figure 7E")
+knitr::include_graphics("VEpbasic_waning730f007uncor0_05_0_7.pdf")
+print("Figure 7F")
+knitr::include_graphics("VEpbasic_waning730f007_1_0_3_0_95_uncor.pdf")
+```
+
+\newpage
+
+**Supplemental Figures**
+
+**Supplemental Figure 1.** 
+
+```{r supplementalfigure1ABC, echo=FALSE, warning=FALSE, message=FALSE, fig.align='center'}
+###########################  Figure 4 Panel A   ############################################
+#Finding the closest to the average curve and it's number
+
+########Plotting all 100 simulation and the one that is closest to average####################
+
+Plotting100<-function(filename){ 
+  with(as.list(c(filename)),{
+    
+# Read the CSV file
+file = paste0(filename, ".csv")
+data <- read.csv(file)
+  
+strings <- data
+# Calculate the overall average values 
+overall_averaged_values <- apply(strings, 2, mean) 
+
+# Function to find the string with the closest values to the overall averaged values 
+find_closest_string <- function(strings, overall_averaged_values) { 
+  # Calculate the distances between each string and the overall averaged values 
+  distances <- apply(strings, 1, function(x) sqrt(sum((x - overall_averaged_values)^2))) 
+  # Find the index of the string with the minimum distance 
+  closest_string_index <- which.min(distances) 
+  return(list(string = strings[closest_string_index, ], index = closest_string_index)) 
+  } 
+# Find the closest string to the overall averaged values 
+closest_string <- find_closest_string(strings, overall_averaged_values) 
+
+pdf(file = paste0(filename, ".pdf"), width = 6.7, height = 5.5, family = "Helvetica", pointsize = 12, onefile = TRUE)
+# Plot all strings 
+matplot(1:6, t(strings), type = "l", col = "grey", lty = 1, xlab = "Study Month", ylab = "VEp") 
+# Plot the chosen closest string as a thick line 
+lines(1:6, closest_string$string, type = "l", lwd = 2) 
+#legend("topleft", legend = paste("Closest to Average (VEp#", closest_string$index,")", sep = " "), col = "black", lwd = 2)
+dev.off()
+     return(closest_string$index)
+   })
+ }
+
+################finding the closest to averaged VE values for each condition ############ 
+allfilenames <- c("VEpbasic_waning730f007_0_5x","VEpbasic_waning730f007_1","VEpbasic_waning730f007_2x")
+
+for (k in 1:length(allfilenames)) {
+index=Plotting100(allfilenames[k])
+file = paste0(allfilenames[k], ".csv")
+data=read.csv(file)
+
+# Extract the specific row and convert it to a numeric vector
+# Create the variable with the name in the name vector
+#the result is a varibale with the name allfilenames[i] that has the simulation values closest to the 100 simulation average
+assign(allfilenames[k], as.numeric(data[index,]), envir = .GlobalEnv)
+}
+
+print("Supplemental Figure 1A")
+knitr::include_graphics("VEpbasic_waning730f007_0_5x.pdf")
+print("Supplemental Figure 1B")
+knitr::include_graphics("VEpbasic_waning730f007_1.pdf")
+print("Supplemental Figure 1C")
+knitr::include_graphics("VEpbasic_waning730f007_2x.pdf")
+```
+
+The code will use the data from .csv files "susceptible91_2xless.csv", "susceptible1_69.csv", and "susceptible59_2xmore.csv" to plot Supplemental Figure 1 Panels D, E, and F. 
+
+```{r supplementalfigure1DEF, echo=FALSE, warning=FALSE, message=FALSE, fig.align='center'}
+# Load necessary libraries
+rm(list = ls())
+library(readr)   # Reading CSV files
+library(tidyr)   # Data tidying functions
+library(dplyr)   # Data manipulation functions
+library(ggplot2) # Plotting with ggplot2
+
+# Load the CSV file
+data <- read.csv("susceptible91_2xless.csv") 
+#data <- read.csv("susceptible1_69.csv") #baseline parameters
+#data <- read.csv("susceptible59_2xmore.csv")  
+
+# Extract relevant columns (assuming 2nd and 6th columns contain infection dates)
+infection_dates <- data[[2]]
+infection_dates_vaccinated <- data[[6]]
+
+# Define groups
+group1 <- infection_dates[1:14001]
+group2 <- infection_dates[14002:200000]
+group3 <- infection_dates_vaccinated[1:14001]
+group4 <- infection_dates_vaccinated[14002:200000]
+total <- rbind(group1, group2, group3, group4)
+
+# Function to calculate the fraction of susceptible people per day
+fraction_susceptible <- function(group, days = 1:180) {
+  total <- length(group)  # Total individuals in the group
+
+  # Calculate the fraction of susceptible individuals per day
+  sapply(days, function(day) {
+    still_susceptible <- sum(group == 0 | group > day)  # Count individuals not infected by this day
+    still_susceptible / total  # Fraction of susceptible individuals
+  })
+}
+
+# Apply the function to each group
+frac1 <- fraction_susceptible(group1)
+frac2 <- fraction_susceptible(group2)
+frac3 <- fraction_susceptible(group3)
+frac4 <- fraction_susceptible(group4)
+
+# Prepare data for plotting (include day 0 as 1 for all groups)
+plot_data <- data.frame(
+  Days = rep(0:180, 4),  # Days for x-axis positioning
+  Fraction = c(1, frac1, 1, frac2, 1, frac3, 1, frac4),  # Fractions for each group
+  Group = factor(rep(1:4, each = 181))  # Group labels
+)
+
+# Define color-blind-friendly colors for the groups
+ColorBlindFriendly <- c("#E69F00", "#56B4E9", "#800080", "#009E73")
+    
+# Create the plot using ggplot2
+ggplot(plot_data, aes(x = Days, y = Fraction, color = Group)) +
+  geom_line(size = 1.5) +  # Make lines thicker with size parameter
+  ylim(0, 1) +  # Set y-axis limits between 0 and 1scale_colour_manual(values = ColorBlindFriendly) +
+  scale_colour_manual(values = ColorBlindFriendly) +
+  scale_x_continuous(
+    breaks = seq(0, 180, by = 30),  # Set breaks at every 30 days
+    labels = c("0", "1", "2", "3", "4", "5", "6")  # Correct labels
+  ) +
+  labs(
+    #title = "Fraction of Susceptible Individuals in Different Groups",
+    x = "Study Month",  # X-axis label
+    y = "Fraction of Susceptible",  # Y-axis label
+    color = "Group"  # Legend title
+  ) +
+  theme(
+    axis.title.x = element_text(size = 18),  # X-axis label size
+    axis.title.y = element_text(size = 18),  # Y-axis label size
+    axis.text.x = element_text(size = 18),   # X-axis tick label size
+    axis.text.y = element_text(size = 18),   # Y-axis tick label size
+    legend.title = element_text(size = 18),  # Legend title size
+    legend.text = element_text(size = 18)    # Legend text size
+  )
+print("Supplemental Figure 1D")
+ggsave("Sfigure1D.eps", width = 6, height = 4.5, device = "eps")
+#ggsave("Sfigure1E.eps", width = 6, height = 4.5, device = "eps")
+#ggsave("Sfigure1F.eps", width = 6, height = 4.5, device = "eps")
+
+```
+
+\newpage
+
+**Supplemental Figure 2.** 
+
+Supplemental Figure 2 Panels A and D are the same as Figure 6A and Figure 7B. 
+Supplemental Figure 2 Panels B and E are the same as Figure 6D and Figure 7E. 
+The code below is for Supplemental Figure 2 Panel F as an example on how correlation was introduced.
+Files "VEpbasic_waning730f007_0_5_0_95_cor.csv" to plot Panel C and "VEpbasic_waning730f007cor0_05_0_7.csv" to plot Panel F are provided.
+
+```{r supplementalFigure2PanelF, echo=FALSE, warning=FALSE, message=FALSE, fig.align='center'}
+
+rm(list=ls())
+library(readr)   # Read tabular data.
+library(tidyr)   # Data frame tidying functions.
+library(dplyr)   # General data frame manipulation.
+library(ggplot2) # Flexible plotting.
+# 
+# VEmodelwithbarplots<-function(frac1,frac2,alpha1,alpha2,alpha3,alpha4,beta1,beta2,beta3,beta4,VEswaning,VEpwaning,m){ #m is the number of simulations
+#   with(as.list(c(frac1,frac2,alpha1,alpha2,alpha3,alpha4,beta1,beta2,beta3,beta4,VEswaning,VEpwaning,m)),{ # m is the number of the simulation
+# # population
+# N =200000 #number of unvaccinated people      
+# NV=200000 #number of vaccinated people 
+# 
+# adjust_alpha=1
+# adjust_beta=1 #1/0.8 where 0.8 is a mean value for vulnerable group
+# 
+# #Unvaccinated
+# infection_force = 1/180.*adjust_alpha   #4./180. # 30% attack rate over 180 days; to be adjusted
+# infection_to_serious_force = 1/10*adjust_beta # base chance to get severe disease if infected
+# #Vaccinated
+# infection_forceV = 1/180.*adjust_alpha #4./180
+# infection_to_serious_forceV = 1/10.*adjust_beta # base chance to get severe disease if infected while being vaccinated
+# 
+# group1=ceiling(N*frac1)-1 #correction
+# group3=ceiling(NV*frac2)-1 #correction
+# 
+# sample_vulnerableV <- NULL
+# sample_immunocompetentV <- NULL
+# 
+# ###########means 0.7 (vulnerable) and 0.05 (immunocompetent) and a variance of 0.01#############
+# alpha_vulnerable <- 14
+# beta_vulnerable <- 6
+# 
+# alpha_immunocompetent <- 0.1875
+# beta_immunocompetent <- 3.5625
+# 
+# # Sample coefficients for both groups for parameter 'beta' in the model
+# sample_vulnerableV[1:group3] <- rbeta(group3, alpha_vulnerable, beta_vulnerable)
+# sample_immunocompetentV[1:(NV-group3)] <- rbeta((NV-group3), alpha_immunocompetent, beta_immunocompetent)
+# 
+# #if uncorrelated this is for alpha
+# sample_vulnerableV_dif <- NULL
+# sample_immunocompetentV_dif <- NULL
+# 
+# # #case when uncorrelated
+# # sample_vulnerableV_dif[1:group3] <- rbeta(group3, alpha_vulnerable, beta_vulnerable)
+# # sample_immunocompetentV_dif[1:(NV-group3)] <- rbeta((NV-group3), alpha_immunocompetent, beta_immunocompetent)
+# 
+# #case when correlated
+# sample_vulnerableV_dif[1:group3]=sample_vulnerableV[1:group3]
+# sample_immunocompetentV_dif[1:(NV-group3)]=sample_immunocompetentV[1:(NV-group3)]
+# 
+# alpha3v=mean(sample_vulnerableV_dif)
+# alpha4v=mean(sample_immunocompetentV_dif)
+# print(alpha3v)
+# print(alpha4v)
+# beta3v=mean(sample_vulnerableV)
+# beta4v=mean(sample_immunocompetentV)
+# print(beta3v)
+# print(beta4v)
+# 
+# if (VEswaning>0) {
+# VEs_waining= (alpha2-alpha4v)/VEswaning #(alpha2-alpha4)/180.
+# VEs_waining_V= (alpha1-alpha3v)/VEswaning #for vulnerable group
+# }
+# if (VEpwaning>0) {
+# VEp_waining= (beta2-beta4v)/VEpwaning 
+# VEp_waining_V= (beta1-beta3v)/VEpwaning 
+# }
+# 
+# ###########################block for unvaccinated##################################
+# #initializing groups S and SS with different protection
+# S = 0.0*(1:N)
+# SS = 0.0*(1:N)
+# infect=0*(1:N)
+# ser=0*(1:N) #severe cases
+# 
+# #two groups: 'vulnerable'(group1) and 'immunocompetent'
+# S[1:group1]=alpha1 # protection against infection in unvaccinated: 1 means base, <1 means more protected
+# S[(group1+1):N]=alpha2
+# SS[1:group1]=beta1 # protection against severe disease: 1 means base, <1 means more protected
+# SS[(group1+1):N]=beta2 
+# 
+# for (i in 1:180) #i corresponds to the day, j corresponds to the individal/person
+# { # cycle per days
+#   for (j in 1:N) # cycle per people
+#   {
+#     if ((infect[j]==0) && (infection_force*S[j] > runif(1))) # infection probability
+#     {
+#       infect[j]=i #day of infection
+#       if (infection_to_serious_force*SS[j] > runif(1)) # progression to severe probability
+#       {
+#         ser[j]=i #day of becoming severely ill
+#       }
+#     }
+#   }
+# }
+# # sum_infect=sum(infect>0)
+# # sum_ser= sum(ser>0)
+# # ratio_inf_to_ser = sum_infect/sum_ser
+# 
+# #calculate at what month each person was infected; 0 - person is not infected
+# infect_month=(infect+30)%/%31 
+# 
+# a=data.frame(S,infect,infect_month,ser)
+# b = a %>% group_by(infect) %>% summarise(mean=mean(S))
+# 
+# #infect_month=0 in 'c' shows the line for uninfected; if absent -all infected; if '6' is absent - noone infected during month 6
+# c = a %>% group_by(infect_month) %>% summarise(mean_per_Month=mean(S),N=n())
+# 
+# ser_month=(ser+30)%/%30.1
+# a_ss=data.frame(S,ser,ser_month)
+# ##ser_month=0 in 'd' shows the line for those not progressed to severe disease 
+# d = a_ss %>% group_by(ser_month) %>% summarise(SS_per_Month=mean(S),Nser=n())
+# 
+# ###############################################vaccinated##############################
+# #initializing groups S and SS with different protection
+# SV = 0.0*(1:NV)
+# SSV = 0.0*(1:NV)
+# infectV=0*(1:NV)
+# serV=0*(1:NV)
+# 
+# #two groups: 'vulnerable'(group3) and 'immunocompetent'(group 4) in vaccinated
+# 
+# if (VEswaning==0) {
+#   SV[1:group3]=sample_vulnerableV_dif[1:group3] 
+#   SV[(group3+1):NV]=sample_immunocompetentV_dif[1:(NV-group3)]
+# }
+# 
+# if (VEpwaning==0) {
+# # #two lines below are needed only for stable progression to severe disease#
+# # #also need to comment the line SSV=SV below
+#   SSV[1:group3]=sample_vulnerableV[1:group3]
+#   SSV[(group3+1):NV]=sample_immunocompetentV[1:(NV-group3)]  #beta4
+# }
+# 
+# for (i in 1:180)  { # cycle per days
+#   if (VEswaning>0) {
+#   SV[1:group3]=sample_vulnerableV_dif[1:group3] #alpha3
+#   SV[(group3+1):NV]=sample_immunocompetentV_dif[1:(NV-group3)] #alpha4
+#   if(mean(sample_immunocompetentV_dif[1:(NV-group3)])<alpha2){
+#   sample_immunocompetentV_dif[1:(NV-group3)]= sample_immunocompetentV_dif[1:(NV-group3)]+VEs_waining
+#  for (schet in 1:(NV-group3)){
+#     if (sample_immunocompetentV_dif[schet]>1) {sample_immunocompetentV_dif[schet]==1}
+#   }
+#   }
+#   if(mean(sample_vulnerableV_dif[1:group3])<alpha1){
+#   sample_vulnerableV_dif[1:group3]= sample_vulnerableV_dif[1:group3]+VEs_waining_V
+#     for (schet in 1:group3){
+#     if (sample_vulnerableV_dif[schet]>1) {sample_vulnerableV_dif[schet]==1}
+#   }
+#   }
+#   }
+#   if (VEpwaning>0) {
+#   SSV[(group3+1):NV]=sample_immunocompetentV[1:(NV-group3)]  #beta4
+#   SSV[1:group3]=sample_vulnerableV[1:group3]  #beta3
+#   if(mean(sample_immunocompetentV[1:(NV-group3)])<beta2){
+#   sample_immunocompetentV[1:(NV-group3)]= sample_immunocompetentV[1:(NV-group3)]+VEp_waining
+#   for (schet in 1:(NV-group3)){
+#     if (sample_immunocompetentV[schet]>1) {sample_immunocompetentV[schet]==1}
+#   }
+#   }
+#   if(mean(sample_vulnerableV[1:group3])<beta1){
+#   sample_vulnerableV[1:group3]= sample_vulnerableV[1:group3]+VEp_waining_V
+#   for (schet in 1:group3){
+#     if (sample_vulnerableV[schet]>1) {sample_vulnerableV[schet]==1}
+#   }
+#   }
+#   }
+# 
+#   for (j in 1:N) # cycle per people
+#   {
+#     if ((infectV[j]==0) && (infection_forceV*SV[j] > runif(1))) # infection probability
+#     {
+#       infectV[j]=i
+#       if (infection_to_serious_forceV*SSV[j] > runif(1)) # serious probability
+#       {
+#         serV[j]=i
+#       }
+#     }
+#   }
+# }
+# sum_infectV=sum(infectV>0)
+# sum_serV= sum(serV>0)
+# ratio_inf_to_serV = sum(infectV>0)/sum(serV>0)
+# 
+# infect_monthV=(infectV+30)%/%31
+# aV=data.frame(SV,infectV,infect_monthV,serV)
+# bV = aV %>% group_by(infectV) %>% summarise(mean=mean(SV))
+# cV = aV %>% group_by(infect_monthV) %>% summarise(mean_per_MonthV=mean(SV),NV=n())
+#  
+# ser_monthV=(serV+30)%/%30.1
+# a_ssV=data.frame(SV,serV,ser_monthV)
+# dV = a_ssV %>% group_by(ser_monthV) %>% summarise(SS_per_MonthV=mean(SV),NserV=n())
+
+# ##################################calculating VEp###############################
+# VEp=1-(dV$NserV/cV$NV)[2:7]/(d$Nser/c$N)[2:7] 
+#    return(VEp)
+#    })
+# }
+# 
+# set.seed(123) #setting seed keeps ALL 100 simulations the same if you repeat it
+# simul_number=100
+# VEpbasic <- matrix(NA,nrow=simul_number,ncol=6)
+# for (m in 1:simul_number) {
+# VEpbasic[m,] <- VEmodelwithbarplots(0.07,0.07,1,1,1,0.03,1,0.5,1,0.03,730,0,m)
+# }
+# write.csv(VEpbasic, file = "VEpbasic_waning730f007cor0_05_0_7.csv", row.names = FALSE)
+
+##########################################################################################
+########Plotting all 100 simulation and the one that is closest to average####################
+
+Plotting100<-function(filename){ 
+  with(as.list(c(filename)),{
+    
+# Read the CSV file
+file = paste0(filename, ".csv")
+data <- read.csv(file)
+  
+strings <- data
+# Calculate the overall average values 
+overall_averaged_values <- apply(strings, 2, mean) 
+
+# Function to find the string with the closest values to the overall averaged values 
+find_closest_string <- function(strings, overall_averaged_values) { 
+  # Calculate the distances between each string and the overall averaged values 
+  distances <- apply(strings, 1, function(x) sqrt(sum((x - overall_averaged_values)^2))) 
+  # Find the index of the string with the minimum distance 
+  closest_string_index <- which.min(distances) 
+  return(list(string = strings[closest_string_index, ], index = closest_string_index)) 
+  } 
+# Find the closest string to the overall averaged values 
+closest_string <- find_closest_string(strings, overall_averaged_values) 
+
+pdf(file = paste0(filename, ".pdf"), width = 6.7, height = 5.5, family = "Helvetica", pointsize = 12, onefile = TRUE)
+# Plot all strings 
+matplot(1:6, t(strings), type = "l", col = "grey", lty = 1, xlab = "Study Month", ylab = "VEp") 
+# Plot the chosen closest string as a thick line 
+lines(1:6, closest_string$string, type = "l", lwd = 2) 
+#legend("topleft", legend = paste("Closest to Average (VEp#", closest_string$index,")", sep = " "), col = "black", lwd = 2)
+dev.off()
+     return(closest_string$index)
+   })
+ }
+################finding the closest to averaged VE values for each condition ############ 
+allfilenames <- c("VEpbasic_waning730f007_0_05_0_95_cor", "VEpbasic_waning730f007cor0_05_0_7")
+
+for (k in 1:length(allfilenames)) {
+index=Plotting100(allfilenames[k])
+file = paste0(allfilenames[k], ".csv")
+data=read.csv(file)
+
+# Extract the specific row and convert it to a numeric vector
+# Create the variable with the name in the name vector
+#the result is a varibale with the name allfilenames[i] that has the simulation values closest to the 100 simulation average
+assign(allfilenames[k], as.numeric(data[index,]), envir = .GlobalEnv)
+}
+
+print("Supplemental Figure 2C")
+knitr::include_graphics("VEpbasic_waning730f007_0_05_0_95_cor.pdf")
+
+print("Supplemental Figure 2F")
+knitr::include_graphics("VEpbasic_waning730f007cor0_05_0_7.pdf")
+
+```
+
+
